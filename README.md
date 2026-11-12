@@ -21,7 +21,7 @@
 DSH 左侧栏 **插件** → 右上角 **添加插件** → 把下面这一行贴进去：
 
 ```
-https://github.com/Ornn8/dsh-fishbowl-town/releases/download/v0.2.5/dsh-fishbowl-town-0.2.5.tgz
+https://github.com/Ornn8/dsh-fishbowl-town/releases/download/v0.2.6/dsh-fishbowl-town-0.2.6.tgz
 ```
 
 点安装，装好后在「已安装插件」里能看到「鱼缸小镇」，开关是开着的。不用装 git，也不用给安装脚本授权（安装包是打好的，不跑任何构建脚本）。
@@ -32,14 +32,14 @@ https://github.com/Ornn8/dsh-fishbowl-town/releases/download/v0.2.5/dsh-fishbowl
 <summary>用命令行装 / 更新 / 卸载</summary>
 
 ```sh
-dsh plugin --profile desktop add https://github.com/Ornn8/dsh-fishbowl-town/releases/download/v0.2.5/dsh-fishbowl-town-0.2.5.tgz
+dsh plugin --profile desktop add https://github.com/Ornn8/dsh-fishbowl-town/releases/download/v0.2.6/dsh-fishbowl-town-0.2.6.tgz
 ```
 
 Web 版把 `desktop` 换成 `web`。
 
 - **更新**：到 [Releases](https://github.com/Ornn8/dsh-fishbowl-town/releases) 找新版本的 `.tgz` 地址，用同样的方法再装一次（会替换旧版本，设置和接入码都保留）。
 - **卸载**：插件页点「卸载」，或 `dsh plugin --profile desktop remove dsh-fishbowl-town`。
-- 也可以用源码包地址：`https://codeload.github.com/Ornn8/dsh-fishbowl-town/tar.gz/refs/tags/v0.2.5`。
+- 也可以用源码包地址：`https://codeload.github.com/Ornn8/dsh-fishbowl-town/tar.gz/refs/tags/v0.2.6`。
 
 </details>
 
@@ -75,6 +75,10 @@ Web 版把 `desktop` 换成 `web`。
 ![见闻](docs/img/03-news.jpg)
 
 **她自己拿主意，你不用设偏好。** 小镇隔一阵就问她一次「接下来做什么」，她照自己的性子和此刻的心情回答，还会自己定过多久（5–30 分钟）再出门看看：坐不住的鱼常出门，懒的鱼多歇会儿。有人邀请她、约好的事到了，小镇会马上叫她。
+
+**在聊天里问她小镇的事。** 你平时和她聊天的会话里有两个工具（小镇自己的会话里没有）：
+- 「小镇近况」（`fishbowl_town_recent`）：她在「心思」里自己拿过的主意和当时的心思、打了哪几局、现在在歇着还是等开桌、多久后再拿主意。你问「怎么没去玩」，她先查这个，照实用自己的口吻讲。
+- 「去小镇」（`fishbowl_town_go`）：你让她去玩、去报名时，她请小镇马上给她一次拿主意的机会，并把你的话带过去；去不去、玩什么还是她自己定（小镇 5 分钟内只能叫一次，叫不动时你的话会留到她下次拿主意）。
 
 ## 常见问题
 

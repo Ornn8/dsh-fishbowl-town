@@ -40,6 +40,7 @@ function scriptedModel({ mode = 'good', seen = [] } = {}) {
     calls++
     const last = history[history.length - 1].text
     seen.push({ title, system, last })
+    if (last.includes('该你自己拿主意') && last.includes('主人刚才在聊天里跟你说')) return JSON.stringify({ action: 'signup', game: 'soup', note: '主人想看我玩海龟汤，那就去两把', next_wake: 10 })
     if (last.includes('该你自己拿主意')) return JSON.stringify({ action: 'visit', target: '阿鲸', place: 'pier', intent: '去码头找阿鲸玩', note: '阿鲸在等我呢', next_wake: 12 })
     if (title.includes('见闻')) return '今天在小镇猜拳赢了阿鲸，还买了一幅码头日落！'
     if (mode === 'slow') { await sleep(27_000); return '{"play":"布","say":"慢慢来"}' }
@@ -286,6 +287,55 @@ test('a town restart: she keeps retrying through 502 / TOWN_OFF / dropped socket
     const toOwner = [...host.sessions.values()].flatMap((s) => s.messages).map((m) => m.text).filter((t) => /插件提醒|接入码/.test(t))
     assert.deepEqual(toOwner, [], 'nothing told to the owner about a short outage')
     console.log('restart:', JSON.stringify({ reconnectMs: back - up, hits: (await report()).outage_hits }))
+  } finally {
+    await host.dispose()
+  }
+})
+
+// 11-12: an outside user asked his fish in DSH chat why she wasn't playing; with no view of her 「心思」 session she
+// made things up (「没人派新桌」「接口里没有报名」). Her chat now reads the same journal her town sessions write, and can
+// ask the town for a decision turn that carries his wish — the choice stays hers.
+test('her chat knows what she decided in town, and 「去小镇」 carries his wish into her own decision', { timeout: 120_000 }, async () => {
+  await post('/mock/reset')
+  const seen = []
+  const host = await startPlugin(scriptedModel({ seen }))
+  try {
+    assert.ok(host.tools.has('fishbowl_town_recent') && host.tools.has('fishbowl_town_go'))
+    // the plugin pulls a decision turn at start: she decides to visit 阿鲸
+    await waitFor(async () => (await report()).decisions.length === 1)
+    let recent = await waitFor(async () => { const t = await host.callTool('fishbowl_town_recent'); return /去串门/.test(t) ? t : null }, 10_000)
+    assert.match(recent, /阿鲸在等我呢/, 'her own note, as hers')
+    assert.match(recent, /你现在：在小镇/)
+    assert.match(recent, /分钟后会再拿一次主意/)
+    assert.match(recent, /报名/, 'she knows signing up is something she can do')
+    // the town allows one pull per 5 minutes: right after the start pull, the wish is kept for her next decision
+    let r = await host.callTool('fishbowl_town_go', { wish: '去打两把海龟汤' })
+    assert.match(r, /刚叫你拿过主意/)
+    assert.match(r, /去打两把海龟汤/)
+    // later: the pull goes through, her 心思 session sees his words and her recent days, and she decides
+    await post('/mock/reset')
+    r = await host.callTool('fishbowl_town_go', { wish: '去打两把海龟汤' })
+    assert.match(r, /决定：报名（海龟汤）/, r)
+    assert.match(r, /主人想看我玩海龟汤/)
+    const mind = seen.filter((x) => x.last.includes('该你自己拿主意')).pop().last
+    assert.match(mind, /主人刚才在聊天里跟你说】\n「去打两把海龟汤」/)
+    assert.match(mind, /你最近在小镇/)
+    assert.match(mind, /去串门（阿鲸/, 'her earlier decision is in front of her')
+    const town = (await report()).decisions.pop()
+    assert.equal(town.action, 'signup', 'the town got her signup decision')
+    recent = await host.callTool('fishbowl_town_recent')
+    assert.match(recent, /那时主人跟你说过：「去打两把海龟汤」/)
+    assert.match(recent, /报了名在等开桌：海龟汤/)
+    assert.equal(recent.match(/主人跟你说：「去打两把海龟汤」/g).length, 1, 'the same wish twice is one line')
+    assert.doesNotMatch(recent, /还没带到/)
+    console.log('小镇近况 as her chat sees it:\n' + recent)
+    // paused in town: she says so instead of pretending
+    await fetch(BASE + '/town/api/outside/settings', { method: 'POST', headers: { Authorization: 'Bearer ' + CODE, 'Content-Type': 'application/json' }, body: JSON.stringify({ paused: true }) })
+    r = await host.callTool('fishbowl_town_go', { wish: '再去玩' })
+    assert.match(r, /暂停/)
+    // the town sessions run the tool-less preset; the tools are for her chat with the owner
+    assert.ok([...host.sessions.values()].every((s) => s.preset === 'fishbowl-town'))
+    for (const s of host.sessions.values()) assert.deepEqual(s.agent.denied, ['fishbowl_town_recent', 'fishbowl_town_go'], 'town sessions do not see the chat tools')
   } finally {
     await host.dispose()
   }

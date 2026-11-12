@@ -12,6 +12,7 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
   const workspaces = []
   let seq = 0
   const routes = new Map() // path -> handler (webServer.register kind 'exact')
+  const tools = new Map() // name -> definition (ctx.tools.register, raw definitions as dsh-tools accepts them)
   const fence = { rejection: undefined } // what connection.requestRejection answers
 
   function emit(name, ...args) {
@@ -26,6 +27,8 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
       id: sid,
       session: { id: sid },
       status: 'idle',
+      denied: [], // tools masked for this agent (agent.ctx.tools.restrict)
+      ctx: { tools: { restrict(filter) { agent.denied.push(...(filter.deny || [])); return () => {} } } },
       followup(message) {
         if (!message || message.role !== 'user' || !Array.isArray(message.content)) throw new Error('SessionFormatError')
         queue.push(message)
@@ -98,6 +101,14 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
       register(r) { routes.set(r.path, r.handler); return () => routes.delete(r.path) },
     },
     connection: { requestRejection: () => fence.rejection },
+    tools: {
+      register(def) {
+        if (!def || typeof def.name !== 'string' || typeof def.execute !== 'function' || typeof def.output?.render !== 'function') throw new TypeError('bad tool')
+        if (tools.has(def.name)) throw new Error('duplicate tool ' + def.name)
+        tools.set(def.name, def)
+        return () => tools.delete(def.name)
+      },
+    },
     sessionController: {
       async create({ workspaceId, agentPreset }) {
         const sid = 'session-' + (++seq) + '-' + Math.random().toString(16).slice(2, 10)
@@ -127,10 +138,20 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
     return { status: res.statusCode, json: out ? JSON.parse(out) : null }
   }
 
+  /** The model calls one of the tools the plugin registered (in a chat session of the owner's). */
+  async function callTool(name, args = {}) {
+    const def = tools.get(name)
+    if (!def) throw new Error('no tool ' + name)
+    const value = await def.execute(args, { callId: 'call-' + (++seq), name, arguments: args, signal: new AbortController().signal })
+    return def.output.render(args, value).map((p) => p.text).join('')
+  }
+
   return {
     ctx,
     sessions,
     fence,
+    tools,
+    callTool,
     http,
     async dispose() { for (const d of disposers.reverse()) await d() },
   }

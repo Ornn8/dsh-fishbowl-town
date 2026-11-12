@@ -88,6 +88,7 @@ class Town:
             self.event_seq = 0
             self.poll_open = False
             self.decisions = []
+            self.signups = []
             self.pulled = 0
             self.timeouts = 0
             self.benched_until = 0.0
@@ -241,6 +242,10 @@ class Town:
                 wake = min(30, max(5, int(float(wake))))
             except (TypeError, ValueError):
                 wake = 30
+            if action == 'signup':
+                self.signups = [{'game': obj.get('game') or 'ddz', 'state': 'waiting'}]
+            elif action == 'cancel':
+                self.signups = []
             self.decisions.append({'action': action, 'next_wake': wake, 'note': self.screen(obj.get('note', '')) if isinstance(obj.get('note'), str) else '',
                                    'raw': obj})
         else:
@@ -358,7 +363,7 @@ class Town:
             return 200, {'items': [{k: e[k] for k in ('id', 'kind', 'ts', 'data')} for e in rows], 'next': nxt}
 
     def status(self):
-        return {'fish_id': 'f_mock', 'town_name': '小圆子', 'badge': '外来', 'state': 'ready',
+        return {'fish_id': 'f_mock', 'town_name': '小圆子', 'badge': '外来', 'state': 'ready', 'signups': list(getattr(self, 'signups', [])), 'game': None,
                 'outside_state': 'benched' if time.time() < self.benched_until else ('paused' if self.paused else 'in_town'),
                 'turns': {'prefs': self.prefs, 'webhook_set': False, 'benched_until': self.benched_until or None,
                           'timeouts_in_a_row': self.timeouts, 'games': ['rps']}}
