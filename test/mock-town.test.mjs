@@ -96,7 +96,7 @@ test('a good fish plays a game and a visit, and hears the news', { timeout: 120_
     // her town sessions run the town preset, whose system prompt is only her persona
     const gameSession = [...host.sessions.values()].find((s) => s.title === '鱼缸小镇 · 牌桌')
     assert.equal(gameSession.preset, 'fishbowl-town')
-    assert.match(seen.find((x) => x.title === '鱼缸小镇 · 牌桌').system, /肥鱼小镇/)
+    assert.match(seen.find((x) => x.title === '鱼缸小镇 · 牌桌').system, /鱼缸小镇/)
     console.log('good fish:', JSON.stringify({ took: answered.map((x) => x.took), game: game.score, visit: r.visits[0] }))
   } finally {
     await host.dispose()
