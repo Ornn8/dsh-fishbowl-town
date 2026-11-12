@@ -44,7 +44,7 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
         turn++
         const myTurn = turn
         s.messages.push({ role: 'user', text: message.content.map((b) => b.text).join('') })
-        emit('session/event', agent.session, { type: 'user/message', data: { message, turn: myTurn } })
+        emit('session/event', agent.session, { type: 'user/message', data: message }) // DSH 0.2.1 shape: the event data is the message itself
         const system = renderSystem(s.preset)
         let text
         try {
@@ -116,6 +116,9 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
         sessions.get(sid).agent = makeAgent(sid)
         return { sessionId: sid, agentPreset }
       },
+      async list() {
+        return { items: [...sessions.entries()].map(([sid, s]) => ({ sessionId: sid, updatedAt: s.updatedAt || 0, blank: !s.messages.length, running: false, agentAvailable: true, projections: { kind: 'cached', asOfSeq: 0, values: { title: s.title } } })) }
+      },
       async rename({ sessionId, title }) { sessions.get(sessionId).title = title; return { title, seq: 0 } },
       async resolveAgent(sid) { const s = sessions.get(sid); return s ? { agent: s.agent } : { error: { message: 'not found' } } },
       cancel({ sessionId }) { const s = sessions.get(sessionId); if (s) s.agent.cancelled = true; return { accepted: true } },
@@ -139,17 +142,36 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
   }
 
   /** The model calls one of the tools the plugin registered (in a chat session of the owner's). */
-  async function callTool(name, args = {}) {
+  async function callTool(name, args = {}, { sessionId } = {}) {
     const def = tools.get(name)
     if (!def) throw new Error('no tool ' + name)
-    const value = await def.execute(args, { callId: 'call-' + (++seq), name, arguments: args, signal: new AbortController().signal })
+    const agent = sessionId ? sessions.get(sessionId)?.agent : undefined
+    const value = await def.execute(args, { callId: 'call-' + (++seq), name, arguments: args, agent, signal: new AbortController().signal })
     return def.output.render(args, value).map((p) => p.text).join('')
+  }
+
+  /** The owner's own chat with her (an ordinary session, default preset): say() types a line and waits for her reply. */
+  async function ownerChat(title) {
+    const sid = 'session-owner-' + (++seq) + '-' + Math.random().toString(16).slice(2, 10)
+    sessions.set(sid, { title, preset: 'default', workspaceId: 'ws-owner', messages: [] })
+    sessions.get(sid).agent = makeAgent(sid)
+    return {
+      sid,
+      say(text) {
+        const s = sessions.get(sid)
+        s.updatedAt = Date.now()
+        const before = s.messages.length
+        s.agent.followup({ id: 'm' + (++seq), role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } })
+        return new Promise((resolve) => { const t = setInterval(() => { if (s.messages.length >= before + 2 && s.agent.status === 'idle') { clearInterval(t); resolve(s.messages[s.messages.length - 1].text) } }, 20) })
+      },
+    }
   }
 
   return {
     ctx,
     sessions,
     fence,
+    ownerChat,
     tools,
     callTool,
     http,

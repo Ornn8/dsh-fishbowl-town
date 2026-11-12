@@ -11,7 +11,8 @@ What it mirrors:
 The fake games: 猜拳 (rock-paper-scissors, best of three, JSON {play, say}) and a 串门 with the real visit rules' reply shape.
 
 Control routes (test only): POST /mock/game {rounds?}, POST /mock/visit {lines?}, POST /mock/paint, GET /mock/report, POST /mock/reset,
-POST /mock/outage {plan: [[mode, seconds], ...]} with mode 502 (nginx HTML page) | 503 (TOWN_OFF) | drop (socket closed, no reply):
+POST /mock/outage {plan: [[mode, seconds], ...]} with mode 502 (nginx HTML page) | 503 (TOWN_OFF) | restarting (503 TOWN_RESTARTING,
+retry_after 3 + Retry-After: 3, town 17c9b14) | drop (socket closed, no reply):
 a town restart as the outside API sees it.
 Run: python -I mock_town.py --port 18930 --code-file <file holding a fbo_ test code>   (the code is never printed)
 """
@@ -314,6 +315,7 @@ class Town:
         with self.lock:
             # town 521be3e: the newest poll wins (an older one answers empty at once)
             self.poll_gen = getattr(self, 'poll_gen', 0) + 1
+            self.connected = True  # town 17c9b14: not_connected until her program's first poll
             mine = self.poll_gen
             self.lock.notify_all()
             end = time.time() + wait
@@ -364,7 +366,7 @@ class Town:
 
     def status(self):
         return {'fish_id': 'f_mock', 'town_name': '小圆子', 'badge': '外来', 'state': 'ready', 'signups': list(getattr(self, 'signups', [])), 'game': None,
-                'outside_state': 'benched' if time.time() < self.benched_until else ('paused' if self.paused else 'in_town'),
+                'outside_state': 'not_connected' if not getattr(self, 'connected', False) else 'benched' if time.time() < self.benched_until else ('paused' if self.paused else 'in_town'),
                 'turns': {'prefs': self.prefs, 'webhook_set': False, 'benched_until': self.benched_until or None,
                           'timeouts_in_a_row': self.timeouts, 'games': ['rps']}}
 
@@ -433,6 +435,15 @@ def make_handler(town: Town):
                 return True
             if mode == '503':
                 self._send(503, {'error': 'TOWN_OFF'})
+                return True
+            if mode == 'restarting':
+                body = json.dumps({'error': 'TOWN_RESTARTING', 'retry_after': 3}).encode()
+                self.send_response(503)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Retry-After', '3')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
                 return True
             body = b'<html><head><title>502 Bad Gateway</title></head><body><center><h1>502 Bad Gateway</h1></center><hr><center>nginx</center></body></html>'
             self.send_response(502)
@@ -516,6 +527,8 @@ def make_handler(town: Town):
             if route.startswith('turns/'):
                 return self._send(*town.answer(route[len('turns/'):], body))
             if route == 'agency':
+                if not getattr(town, 'connected', False):
+                    return self._send(409, {'error': 'TOWN_OUTSIDE_NOT_CONNECTED'})
                 return self._send(*town.pull())
             if route == 'card':
                 return self._send(*town.card(body))

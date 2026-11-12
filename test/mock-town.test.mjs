@@ -43,6 +43,8 @@ function scriptedModel({ mode = 'good', seen = [] } = {}) {
     if (last.includes('该你自己拿主意') && last.includes('主人刚才在聊天里跟你说')) return JSON.stringify({ action: 'signup', game: 'soup', note: '主人想看我玩海龟汤，那就去两把', next_wake: 10 })
     if (last.includes('该你自己拿主意')) return JSON.stringify({ action: 'visit', target: '阿鲸', place: 'pier', intent: '去码头找阿鲸玩', note: '阿鲸在等我呢', next_wake: 12 })
     if (title.includes('见闻')) return '今天在小镇猜拳赢了阿鲸，还买了一幅码头日落！'
+    if (title === '和小圆子聊天') return last.includes('鱼缸小镇') ? '主人主人，我在小镇猜拳赢啦！' : '那你今晚早点睡，我在小镇等你～'
+    if (title === '写代码') return '好的，我改一下。'
     if (mode === 'slow') { await sleep(27_000); return '{"play":"布","say":"慢慢来"}' }
     if (mode === 'slowish') { await sleep(7_000); return '{"play":"布","say":"慢慢来"}' }
     if (mode === 'garbage-once' && !last.includes('刚才的回答')) return '我觉得出布比较好吧'
@@ -267,7 +269,7 @@ test('a town restart: she keeps retrying through 502 / TOWN_OFF / dropped socket
   const R = '/fishbowl-town'
   try {
     await sleep(3000) // her long-poll is waiting at the town
-    await post('/mock/outage', { plan: [['drop', 5], ['502', 8], ['503', 8], ['drop', 4]] })
+    await post('/mock/outage', { plan: [['restarting', 6], ['drop', 4], ['502', 6], ['503', 5], ['drop', 4]] })
     const downAt = Date.now()
     await sleep(12_000)
     const mid = (await host.http(R + '/state')).json
@@ -279,7 +281,7 @@ test('a town restart: she keeps retrying through 502 / TOWN_OFF / dropped socket
       const s = (await host.http(R + '/state')).json
       return s.stats.problem === '' && s.stats.reconnects >= 1 ? Date.now() : null
     }, 40_000)
-    assert.ok(back - up < 12_000, `reconnected ${back - up} ms after the town came back`)
+    assert.ok(back - up < 6_000, `reconnected ${back - up} ms after the town came back (Retry-After / 3 s, no long backoff)`)
     assert.ok((await report()).outage_hits >= 4, 'kept knocking during the outage')
     await post('/mock/game', { rounds: 2 })
     await waitFor(async () => (await report()).games.length === 1, 60_000)
@@ -336,6 +338,69 @@ test('her chat knows what she decided in town, and 「去小镇」 carries his w
     // the town sessions run the tool-less preset; the tools are for her chat with the owner
     assert.ok([...host.sessions.values()].every((s) => s.preset === 'fishbowl-town'))
     for (const s of host.sessions.values()) assert.deepEqual(s.agent.denied, ['fishbowl_town_recent', 'fishbowl_town_go'], 'town sessions do not see the chat tools')
+  } finally {
+    await host.dispose()
+  }
+})
+
+// 11-12: 余省澜's fish said her two sides 「不通气」 — town news went to 「见闻」, and 心思 knew nothing of her life with him.
+// The plugin now finds her chat with him by itself (or he binds it in one click), sends the news there, and gives her
+// decision and visit turns a few lines of 「你和主人最近的事」 (owner can switch it off).
+test('her chat with him is found by itself, gets the town news, and her town choices remember him', { timeout: 150_000 }, async () => {
+  await post('/mock/reset')
+  const seen = []
+  const host = await startPlugin(scriptedModel({ seen }))
+  const R = '/fishbowl-town'
+  const state = async () => (await host.http(R + '/state')).json
+  try {
+    assert.equal((await state()).newsTo.how, 'news', 'nothing known yet: news go to 见闻')
+    const chat = await host.ownerChat('和小圆子聊天')
+    await chat.say('昨晚又没睡好，困死了')
+    await chat.say('日语作业还欠着两篇')
+    await chat.say('我先去洗个澡')
+    let st = await state()
+    assert.deepEqual({ how: st.newsTo.how, sid: st.newsTo.sid }, { how: 'active', sid: chat.sid }, 'the chat he talks to her in most')
+    assert.ok(st.ownerLife.length >= 2 && st.ownerLife.length <= 4, JSON.stringify(st.ownerLife))
+    assert.ok(st.ownerLife.some((l) => /主人（.*）：我先去洗个澡/.test(l)))
+    assert.ok(st.ownerLife.some((l) => /^你（.*）：那你今晚早点睡/.test(l)))
+    // a coding session where she only calls tools never becomes "her chat"
+    const code = await host.ownerChat('写代码')
+    const rows = (await host.http(R + '/sessions')).json
+    assert.equal(rows.latest, chat.sid)
+    assert.ok(rows.items.some((x) => x.sid === chat.sid && x.title === '和小圆子聊天'))
+    assert.ok(rows.items.every((x) => !/^鱼缸小镇/.test(x.title)), 'her town sessions are not offered')
+    // her decision turn carries their life (and is told to keep it private)
+    await post('/mock/agency')
+    const mind = await waitFor(() => seen.filter((x) => x.last.includes('该你自己拿主意')).pop()?.last, 30_000)
+    assert.match(mind, /【你和主人最近的事】/)
+    assert.match(mind, /没睡好|洗个澡|早点睡/)
+    assert.match(mind, /不要写进 note，不要说给镇上别的鱼听/)
+    // a visit turn too
+    await post('/mock/visit', { lines: 2 })
+    await waitFor(async () => (await report()).visits.length === 1, 60_000)
+    assert.match(seen.find((x) => x.title === '鱼缸小镇 · 串门').last, /【你和主人最近的事】/)
+    // town news land in her chat with him; her reply about the town is not "their life"
+    await post('/mock/game', { rounds: 2 })
+    await waitFor(() => host.sessions.get(chat.sid).messages.some((m) => m.role === 'user' && /鱼缸小镇/.test(m.text)), 60_000)
+    await sleep(300)
+    st = await state()
+    assert.ok(st.ownerLife.every((l) => !/猜拳赢啦/.test(l)), 'her answer to town news is not mixed into their life')
+    // he switches it off
+    await host.http(R + '/save', { method: 'POST', body: { bridgeChat: false } })
+    assert.deepEqual((await state()).ownerLife, [])
+    // 「绑定到当前会话」: the session he talked in last
+    await code.say('把这个函数改一下')
+    let r = await host.http(R + '/save', { method: 'POST', body: { bindLatest: true } })
+    assert.deepEqual({ how: r.json.newsTo.how, sid: r.json.newsTo.sid }, { how: 'bound', sid: code.sid })
+    r = await host.http(R + '/save', { method: 'POST', body: { reportSessionId: '' } })
+    assert.equal(r.json.newsTo.sid, chat.sid, 'back to automatic')
+    // where she used 「小镇近况」 wins over message counts
+    await host.callTool('fishbowl_town_recent', {}, { sessionId: code.sid })
+    assert.deepEqual({ how: (await state()).newsTo.how, sid: (await state()).newsTo.sid }, { how: 'tools', sid: code.sid })
+    // first person: her memories, not another session's records
+    const recent = await host.callTool('fishbowl_town_recent', {}, { sessionId: chat.sid })
+    assert.match(recent, /是你的记忆/)
+    assert.doesNotMatch(recent, /「鱼缸小镇 · 心思」里/)
   } finally {
     await host.dispose()
   }
