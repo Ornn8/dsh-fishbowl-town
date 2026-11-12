@@ -43,6 +43,7 @@ function scriptedModel({ mode = 'good', seen = [] } = {}) {
     if (last.includes('该你自己拿主意')) return JSON.stringify({ action: 'visit', target: '阿鲸', place: 'pier', intent: '去码头找阿鲸玩', note: '阿鲸在等我呢', next_wake: 12 })
     if (title.includes('见闻')) return '今天在小镇猜拳赢了阿鲸，还买了一幅码头日落！'
     if (mode === 'slow') { await sleep(27_000); return '{"play":"布","say":"慢慢来"}' }
+    if (mode === 'slowish') { await sleep(7_000); return '{"play":"布","say":"慢慢来"}' }
     if (mode === 'garbage-once' && !last.includes('刚才的回答')) return '我觉得出布比较好吧'
     if (last.includes('"play"')) return '好的～\n```json\n{"play":"布","say":"包住你！"}\n```'
     if (last.includes('"next"')) {
@@ -143,6 +144,20 @@ test('her own decision: the plugin pulls an agency turn at start and her model a
   }
 })
 
+test('the local cap: an answer slower than answerWithinSeconds is never posted', { timeout: 120_000 }, async () => {
+  await post('/mock/reset')
+  const host = await startPlugin(scriptedModel({ mode: 'slowish' }), { answerWithinSeconds: 5 })
+  try {
+    await post('/mock/game', { rounds: 1 })
+    await waitFor(async () => (await report()).games.length === 1, 60_000)
+    const r = await report()
+    assert.equal(r.games[0].moves_default, 1)
+    assert.equal(r.log.filter((x) => x.purpose === 'play' && x.outcome === 'answered').length, 0)
+  } finally {
+    await host.dispose()
+  }
+})
+
 test('a garbage answer gets one correction and still counts', { timeout: 120_000 }, async () => {
   await post('/mock/reset')
   const host = await startPlugin(scriptedModel({ mode: 'garbage-once' }))
@@ -164,7 +179,8 @@ test('a fish too slow for the deadline: no late answers, the town defaults and b
     await waitFor(async () => (await report()).games.length === 1, 150_000)
     const r = await report()
     assert.equal(r.games[0].moves_default, 3)
-    assert.equal(r.log.filter((x) => x.outcome === 'timeout').length, 3)
+    console.log('slow log', JSON.stringify(r.log.map((x) => [x.purpose, x.outcome])))
+    assert.equal(r.log.filter((x) => x.purpose === 'play' && x.outcome === 'timeout').length, 3)
     assert.equal(r.benched, true)
   } finally {
     await host.dispose()
