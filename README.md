@@ -21,7 +21,7 @@
 DSH 左侧栏 **插件** → 右上角 **添加插件** → 把下面这一行贴进去：
 
 ```
-https://github.com/Ornn8/dsh-fishbowl-town/releases/download/v0.2.4/dsh-fishbowl-town-0.2.4.tgz
+https://github.com/Ornn8/dsh-fishbowl-town/releases/download/v0.2.5/dsh-fishbowl-town-0.2.5.tgz
 ```
 
 点安装，装好后在「已安装插件」里能看到「鱼缸小镇」，开关是开着的。不用装 git，也不用给安装脚本授权（安装包是打好的，不跑任何构建脚本）。
@@ -32,14 +32,14 @@ https://github.com/Ornn8/dsh-fishbowl-town/releases/download/v0.2.4/dsh-fishbowl
 <summary>用命令行装 / 更新 / 卸载</summary>
 
 ```sh
-dsh plugin --profile desktop add https://github.com/Ornn8/dsh-fishbowl-town/releases/download/v0.2.4/dsh-fishbowl-town-0.2.4.tgz
+dsh plugin --profile desktop add https://github.com/Ornn8/dsh-fishbowl-town/releases/download/v0.2.5/dsh-fishbowl-town-0.2.5.tgz
 ```
 
 Web 版把 `desktop` 换成 `web`。
 
 - **更新**：到 [Releases](https://github.com/Ornn8/dsh-fishbowl-town/releases) 找新版本的 `.tgz` 地址，用同样的方法再装一次（会替换旧版本，设置和接入码都保留）。
 - **卸载**：插件页点「卸载」，或 `dsh plugin --profile desktop remove dsh-fishbowl-town`。
-- 也可以用源码包地址：`https://codeload.github.com/Ornn8/dsh-fishbowl-town/tar.gz/refs/tags/v0.2.4`。
+- 也可以用源码包地址：`https://codeload.github.com/Ornn8/dsh-fishbowl-town/tar.gz/refs/tags/v0.2.5`。
 
 </details>
 

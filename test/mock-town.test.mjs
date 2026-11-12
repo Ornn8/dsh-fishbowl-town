@@ -256,3 +256,37 @@ test('settings: every field saved from the page reads back, also after DSH resta
     await host.dispose()
   }
 })
+
+// Town restarts (20:15, 20:26, 20:52–20:54 CST on 11-12): the outside API answers nginx 502 pages, 503 TOWN_OFF while it
+// starts, or just drops sockets — including under a long-poll already waiting. She must keep polling (≤ 10 s apart),
+// come back by herself, play again, and the owner must hear nothing about it.
+test('a town restart: she keeps retrying through 502 / TOWN_OFF / dropped sockets and comes back by herself', { timeout: 150_000 }, async () => {
+  await post('/mock/reset')
+  const host = await startPlugin(scriptedModel())
+  const R = '/fishbowl-town'
+  try {
+    await sleep(3000) // her long-poll is waiting at the town
+    await post('/mock/outage', { plan: [['drop', 5], ['502', 8], ['503', 8], ['drop', 4]] })
+    const downAt = Date.now()
+    await sleep(12_000)
+    const mid = (await host.http(R + '/state')).json
+    assert.ok(mid.running, 'still on duty during the outage')
+    assert.ok(mid.stats.problem, 'the page knows the town is unreachable')
+    assert.ok(mid.stats.problemSince >= downAt - 1000)
+    const up = downAt + 25_000
+    const back = await waitFor(async () => {
+      const s = (await host.http(R + '/state')).json
+      return s.stats.problem === '' && s.stats.reconnects >= 1 ? Date.now() : null
+    }, 40_000)
+    assert.ok(back - up < 12_000, `reconnected ${back - up} ms after the town came back`)
+    assert.ok((await report()).outage_hits >= 4, 'kept knocking during the outage')
+    await post('/mock/game', { rounds: 2 })
+    await waitFor(async () => (await report()).games.length === 1, 60_000)
+    assert.equal((await report()).games[0].moves_legal, 2, 'plays again after the restart')
+    const toOwner = [...host.sessions.values()].flatMap((s) => s.messages).map((m) => m.text).filter((t) => /插件提醒|接入码/.test(t))
+    assert.deepEqual(toOwner, [], 'nothing told to the owner about a short outage')
+    console.log('restart:', JSON.stringify({ reconnectMs: back - up, hits: (await report()).outage_hits }))
+  } finally {
+    await host.dispose()
+  }
+})

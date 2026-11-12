@@ -10,7 +10,9 @@ What it mirrors:
   - GET status, POST settings; errors {"error": CODE, "reason"?}; bad code -> 401 TOWN_OUTSIDE_CODE
 The fake games: 猜拳 (rock-paper-scissors, best of three, JSON {play, say}) and a 串门 with the real visit rules' reply shape.
 
-Control routes (test only): POST /mock/game {rounds?}, POST /mock/visit {lines?}, POST /mock/paint, GET /mock/report, POST /mock/reset.
+Control routes (test only): POST /mock/game {rounds?}, POST /mock/visit {lines?}, POST /mock/paint, GET /mock/report, POST /mock/reset,
+POST /mock/outage {plan: [[mode, seconds], ...]} with mode 502 (nginx HTML page) | 503 (TOWN_OFF) | drop (socket closed, no reply):
+a town restart as the outside API sees it.
 Run: python -I mock_town.py --port 18930 --code-file <file holding a fbo_ test code>   (the code is never printed)
 """
 from __future__ import annotations
@@ -313,6 +315,8 @@ class Town:
             while True:
                 if self.poll_gen != mine:
                     return 200, {'turns': []}
+                if self.outage_mode() is not None:
+                    return None  # the town went down under this poll: the handler drops the socket
                 found = self.open_turns(deliver=True)
                 if found or time.time() >= end:
                     return 200, {'turns': found}
@@ -359,12 +363,28 @@ class Town:
                 'turns': {'prefs': self.prefs, 'webhook_set': False, 'benched_until': self.benched_until or None,
                           'timeouts_in_a_row': self.timeouts, 'games': ['rps']}}
 
+    def plan_outage(self, plan):
+        t = time.time()
+        self.outage = []
+        for mode, secs in plan:
+            self.outage.append((t, t + float(secs), str(mode)))
+            t += float(secs)
+        self.outage_hits = 0
+
+    def outage_mode(self):
+        now = time.time()
+        for start, end, mode in getattr(self, 'outage', []):
+            if start <= now < end:
+                return mode
+        return None
+
     def report(self):
         with self.lock:
             return {'log': [{k: v for k, v in x.items()} for x in self.log], 'games': self.games, 'visits': self.visits,
                     'decisions': getattr(self, 'decisions', []), 'intro': getattr(self, 'intro', None),
                     'events': len(self.events), 'unread': sum(1 for e in self.events if e['acked'] is None),
-                    'open': len(self.open_turns()), 'benched': time.time() < self.benched_until}
+                    'open': len(self.open_turns()), 'benched': time.time() < self.benched_until,
+                    'outage_hits': getattr(self, 'outage_hits', 0)}
 
 
 def make_handler(town: Town):
@@ -393,6 +413,30 @@ def make_handler(town: Town):
             except ValueError:
                 return None, (400, {'error': 'TOWN_BAD_REQUEST'})
 
+        def _outage(self):
+            """True when a planned outage answered (or dropped) this request."""
+            mode = town.outage_mode()
+            if mode is None:
+                return False
+            town.outage_hits += 1
+            if mode == 'drop':
+                self.close_connection = True
+                try:
+                    self.connection.shutdown(2)
+                except OSError:
+                    pass
+                return True
+            if mode == '503':
+                self._send(503, {'error': 'TOWN_OFF'})
+                return True
+            body = b'<html><head><title>502 Bad Gateway</title></head><body><center><h1>502 Bad Gateway</h1></center><hr><center>nginx</center></body></html>'
+            self.send_response(502)
+            self.send_header('Content-Type', 'text/html')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return True
+
         def _authed(self):
             auth = self.headers.get('Authorization', '')
             given = auth[7:].strip() if auth[:7].lower() == 'bearer ' else ''
@@ -405,6 +449,8 @@ def make_handler(town: Town):
                 return self._send(200, town.report())
             if not u.path.startswith('/town/api/outside/'):
                 return self._send(404, {'error': 'TOWN_NOT_FOUND'})
+            if self._outage():
+                return
             if not self._authed():
                 return self._send(401, {'error': 'TOWN_OUTSIDE_CODE'})
             route = u.path[len('/town/api/outside/'):]
@@ -413,7 +459,15 @@ def make_handler(town: Town):
                     wait = max(0.0, min(25.0, float(q.get('wait', ['25'])[0])))
                 except ValueError:
                     return self._send(400, {'error': 'TOWN_BAD_REQUEST'})
-                return self._send(*town.poll(wait))
+                got = town.poll(wait)
+                if got is None:
+                    self.close_connection = True
+                    try:
+                        self.connection.shutdown(2)
+                    except OSError:
+                        pass
+                    return
+                return self._send(*got)
             if route == 'events':
                 try:
                     after = int(q['after'][0]) if q.get('after', [''])[0] != '' else None
@@ -442,11 +496,15 @@ def make_handler(town: Town):
                     town.paint()
                 elif what == 'reset':
                     town.reset()
+                elif what == 'outage':
+                    town.plan_outage(body.get('plan') or [])
                 else:
                     return self._send(404, {'error': 'TOWN_NOT_FOUND'})
                 return self._send(200, {'ok': True})
             if not u.path.startswith('/town/api/outside/'):
                 return self._send(404, {'error': 'TOWN_NOT_FOUND'})
+            if self._outage():
+                return
             if not self._authed():
                 return self._send(401, {'error': 'TOWN_OUTSIDE_CODE'})
             route = u.path[len('/town/api/outside/'):]
