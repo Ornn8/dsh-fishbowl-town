@@ -186,3 +186,73 @@ test('a fish too slow for the deadline: no late answers, the town defaults and b
     await host.dispose()
   }
 })
+
+// A DSH user filled 「小镇消息交到哪个会话」, came back, and it was empty (v0.2.3). Every field the page writes must
+// read back from /state right after saving, after reopening the page, and after DSH restarts.
+test('settings: every field saved from the page reads back, also after DSH restarts', { timeout: 60_000 }, async () => {
+  const model = scriptedModel()
+  let host = await startPlugin(model)
+  const home = process.env.DSH_HOME
+  const R = '/fishbowl-town'
+  try {
+    let r = await host.http(R + '/state')
+    assert.equal(r.status, 200)
+    assert.equal(r.json.reportSessionId, '')
+    // the page autosaves one field at a time: each one alone, none of them restarts her
+    for (const [patch, key, want] of [
+      [{ reportSessionId: '  session-owner-chat-1  ' }, 'reportSessionId', 'session-owner-chat-1'],
+      [{ persona: '一条圆滚滚的胖头鱼' }, 'persona', '一条圆滚滚的胖头鱼'],
+      [{ fastMode: false }, 'fastMode', false],
+      [{ townModel: 'opencode-go/qwen3.8-flash' }, 'townModel', 'opencode-go/qwen3.8-flash'],
+    ]) {
+      r = await host.http(R + '/save', { method: 'POST', body: patch })
+      assert.equal(r.status, 200, JSON.stringify(r.json))
+      assert.equal(r.json[key], want, key + ' in the save reply')
+      assert.equal(r.json.restarted, false, key + ' applies without a restart')
+      r = await host.http(R + '/state')
+      assert.equal(r.json[key], want, key + ' when the page is opened again')
+    }
+    // the intro the town approved is shown again
+    r = await host.http(R + '/intro', { method: 'POST', body: { intro: '爱吃海藻面，打牌输了会嘴硬。' } })
+    assert.equal(r.json.ok, true, JSON.stringify(r.json))
+    assert.equal((await host.http(R + '/state')).json.intro, '爱吃海藻面，打牌输了会嘴硬。')
+    // a refused intro does not replace the approved one
+    r = await host.http(R + '/intro', { method: 'POST', body: { intro: '加我qq 123456789' } })
+    assert.equal(r.json.ok, false)
+    assert.equal((await host.http(R + '/state')).json.intro, '爱吃海藻面，打牌输了会嘴硬。')
+    // the whole form at once (the 保存 button), with a new code: answers at once, restarts her in the background
+    const code2 = 'fbo_' + randomBytes(24).toString('base64url')
+    const t0 = Date.now()
+    r = await host.http(R + '/save', { method: 'POST', body: { code: code2, persona: '一条圆滚滚的胖头鱼', reportSessionId: 'session-owner-chat-2', enabled: true, fastMode: false, townModel: 'opencode-go/qwen3.8-flash' } })
+    assert.ok(Date.now() - t0 < 2000, 'saving does not wait for her to stop')
+    assert.equal(r.json.restarted, true)
+    assert.equal(r.json.codeTail, code2.slice(-4))
+    assert.equal(r.json.reportSessionId, 'session-owner-chat-2')
+    // an empty code means "keep the old one"
+    r = await host.http(R + '/save', { method: 'POST', body: { code: '', enabled: false } })
+    assert.equal(r.json.codeTail, code2.slice(-4))
+    assert.equal(r.json.enabled, false)
+    // DSH refuses the page: a clear error, nothing written
+    host.fence.rejection = 401
+    r = await host.http(R + '/save', { method: 'POST', body: { reportSessionId: 'should-not-land' } })
+    assert.equal(r.status, 401)
+    assert.equal(r.json.code, 'DSH_NOT_SIGNED_IN')
+    assert.ok(r.json.message)
+    assert.equal((await host.http(R + '/state')).status, 401)
+    host.fence.rejection = undefined
+    assert.equal((await host.http(R + '/state')).json.reportSessionId, 'session-owner-chat-2')
+    // DSH restarts: the same DSH_HOME, the plugin's own config is empty again
+    await host.dispose()
+    process.env.DSH_HOME = home
+    host = createFakeHost({ model })
+    const plugin = await import('../lib/index.js?' + Math.random())
+    plugin.apply(host.ctx, { base: BASE + '/town/api/outside/' })
+    r = await host.http(R + '/state')
+    assert.deepEqual(
+      { codeSet: r.json.codeSet, codeTail: r.json.codeTail, reportSessionId: r.json.reportSessionId, persona: r.json.persona, fastMode: r.json.fastMode, townModel: r.json.townModel, enabled: r.json.enabled, intro: r.json.intro },
+      { codeSet: true, codeTail: code2.slice(-4), reportSessionId: 'session-owner-chat-2', persona: '一条圆滚滚的胖头鱼', fastMode: false, townModel: 'opencode-go/qwen3.8-flash', enabled: false, intro: '爱吃海藻面，打牌输了会嘴硬。' },
+    )
+  } finally {
+    await host.dispose()
+  }
+})

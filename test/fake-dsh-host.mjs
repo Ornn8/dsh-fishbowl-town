@@ -1,6 +1,8 @@
 // A small stand-in for the DSH host services the plugin touches, shaped after DSH 0.2.1-rc.5's typings
 // (dsh-api-session-controller, dsh-workspace, dsh-agent-loop, dsh-system-prompt) and the session events community
 // plugins read (user/message, assistant/message, turn/end). The "model" is a function the test supplies.
+// webServer + connection follow dsh-client-connection: requestRejection() answers 401 | 403 | undefined.
+import { EventEmitter } from 'node:events'
 
 export function createFakeHost({ model, latencyMs = 50 } = {}) {
   const listeners = new Map()
@@ -9,6 +11,8 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
   const sessions = new Map() // sid -> { title, preset, workspaceId, messages: [], agent }
   const workspaces = []
   let seq = 0
+  const routes = new Map() // path -> handler (webServer.register kind 'exact')
+  const fence = { rejection: undefined } // what connection.requestRejection answers
 
   function emit(name, ...args) {
     for (const fn of listeners.get(name) || []) fn(...args)
@@ -90,6 +94,10 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
       async create(path, title) { const w = { id: 'ws' + workspaces.length, path, title }; workspaces.push(w); return w },
       async archiveSession(sid) { ctx.workspaceRegistry.archivedSessionIds.push(sid) },
     },
+    webServer: {
+      register(r) { routes.set(r.path, r.handler); return () => routes.delete(r.path) },
+    },
+    connection: { requestRejection: () => fence.rejection },
     sessionController: {
       async create({ workspaceId, agentPreset }) {
         const sid = 'session-' + (++seq) + '-' + Math.random().toString(16).slice(2, 10)
@@ -103,9 +111,27 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
     },
   }
 
+  /** One HTTP request to a route the plugin registered, the way DSH's web server hands it over. */
+  async function http(path, { method = 'GET', body } = {}) {
+    const handler = routes.get(path)
+    if (!handler) return { status: 404, json: null }
+    const req = new EventEmitter()
+    req.method = method
+    req.url = path
+    req.headers = { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000' }
+    req.destroy = () => {}
+    let out = ''
+    const res = { statusCode: 200, headers: {}, setHeader(k, v) { this.headers[k.toLowerCase()] = v }, end(x) { out = String(x ?? '') } }
+    setImmediate(() => { if (body !== undefined) req.emit('data', JSON.stringify(body)); req.emit('end') })
+    await handler(req, res)
+    return { status: res.statusCode, json: out ? JSON.parse(out) : null }
+  }
+
   return {
     ctx,
     sessions,
+    fence,
+    http,
     async dispose() { for (const d of disposers.reverse()) await d() },
   }
 }
