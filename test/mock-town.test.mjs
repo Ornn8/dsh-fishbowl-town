@@ -8,6 +8,8 @@ import { randomBytes } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createFakeHost } from './fake-dsh-host.mjs'
+import { buildTurnPrompt } from '../lib/prompt.js'
+import { describeEvent, isQuiet } from '../lib/events.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const WORK = join(ROOT, '.dshtest', 'mock-e2e')
@@ -42,6 +44,7 @@ function scriptedModel({ mode = 'good', seen = [] } = {}) {
     seen.push({ title, system, last })
     if (last.includes('该你自己拿主意') && last.includes('主人刚才在聊天里跟你说')) return JSON.stringify({ action: 'signup', game: 'soup', note: '主人想看我玩海龟汤，那就去两把', next_wake: 10 })
     if (last.includes('该你自己拿主意')) return JSON.stringify({ action: 'visit', target: '阿鲸', place: 'pier', intent: '去码头找阿鲸玩', note: '阿鲸在等我呢', next_wake: 12 })
+    if (title === '鱼缸小镇 · 日常') return history.some((h) => /小镇的案子/.test(h.text)) ? 'emmm 我不知道' : '{"text":"哈，钓到一条小黄鱼！","feeling":"开心"}'
     if (title.includes('见闻')) return '今天在小镇猜拳赢了阿鲸，还买了一幅码头日落！'
     if (title === '和小圆子聊天') return last.includes('鱼缸小镇') ? '主人主人，我在小镇猜拳赢啦！' : '那你今晚早点睡，我在小镇等你～'
     if (title === '写代码') return '好的，我改一下。'
@@ -337,7 +340,7 @@ test('her chat knows what she decided in town, and 「去小镇」 carries his w
     assert.match(r, /暂停/)
     // the town sessions run the tool-less preset; the tools are for her chat with the owner
     assert.ok([...host.sessions.values()].every((s) => s.preset === 'fishbowl-town'))
-    for (const s of host.sessions.values()) assert.deepEqual(s.agent.denied, ['fishbowl_town_recent', 'fishbowl_town_go'], 'town sessions do not see the chat tools')
+    for (const s of host.sessions.values()) assert.deepEqual(s.agent.denied, ['fishbowl_town_recent', 'fishbowl_town_go', 'fishbowl_town_owner'], 'town sessions do not see the chat tools')
   } finally {
     await host.dispose()
   }
@@ -404,4 +407,54 @@ test('her chat with him is found by itself, gets the town news, and her town cho
   } finally {
     await host.dispose()
   }
+})
+
+// town 4f0af53 (11-13): outside fish get every town feature but earning. Her lines at places come from her own program
+// (kind=activity, opt in with kinds=activity on every poll, else the town 「代写」 them and bills her), and her owner
+// answers 夸夸群 / romance consent through her chat.
+test('activity turns are hers; 夸夸群 and heart consent go through her owner', { timeout: 150_000 }, async () => {
+  await post('/mock/reset')
+  const seen = []
+  const host = await startPlugin(scriptedModel({ seen }))
+  try {
+    await waitFor(async () => (await report()).decisions.length === 1) // connected, her first decision
+    assert.equal((await report()).activity_ok, true, 'every poll carries kinds=activity')
+    await post('/mock/activity', { purpose: 'pier' })
+    const act = await waitFor(async () => (await report()).activities[0], 30_000)
+    assert.deepEqual(act.answer, { text: '哈，钓到一条小黄鱼！', feeling: '开心' })
+    const daily = [...host.sessions.values()].find((s) => s.title === '鱼缸小镇 · 日常')
+    assert.equal(daily.preset, 'fishbowl-town')
+    assert.match(seen.find((x) => x.title === '鱼缸小镇 · 日常').last, /你在码头要开口/)
+    assert.ok(daily.agent.denied.includes('fishbowl_town_owner'))
+    // a line she cannot produce: the plugin says unsupported in time (the town writes it), never a timeout
+    await post('/mock/activity', { purpose: 'crime.witness' })
+    const crime = await waitFor(async () => (await report()).activities[1], 40_000)
+    assert.deepEqual(crime.answer, { unsupported: true })
+    assert.ok(!(await report()).log.some((x) => x.outcome === 'timeout'))
+    // heart consent: she hears it, asks him; his answer goes to the town
+    await post('/mock/heart', { name: '阿鲸' })
+    const told = () => [...host.sessions.values()].filter((s) => s.title === '鱼缸小镇 · 见闻').flatMap((s) => s.messages.map((m) => m.text)).join('\n')
+    await waitFor(() => /心上的事要问主人/.test(told()), 60_000)
+    assert.match(told(), /问问主人同不同意你和阿鲸在一起/)
+    let r = await host.callTool('fishbowl_town_owner', { do: 'heart', verdict: 'yes', words: '好呀' })
+    assert.match(r, /还要等阿鲸那边的主人点头/)
+    assert.deepEqual((await report()).consents[0], { do: 'consent', with: 'f_jing', round: 1, verdict: 'yes', words: '好呀' })
+    // 夸夸群
+    r = await host.callTool('fishbowl_town_owner', { do: 'bless' })
+    assert.match(r, /送祝福/)
+    assert.equal((await report()).blesses, 1)
+    await post('/mock/bless_done')
+    await waitFor(() => /你家主人今天也辛苦啦/.test(told()), 60_000)
+    // a 「代写」 notice (the town wrote a line, billed) shows on her plugin page; nobody is told in chat
+    assert.ok(isQuiet({ kind: 'outside_ghost' }))
+    assert.match(describeEvent({ kind: 'outside_ghost', data: { price_yuan: '0.01', facts: '她在码头的一句话是小镇代写的' } }), /代写.*¥0\.01/)
+  } finally {
+    await host.dispose()
+  }
+})
+
+test('decision turns list every action the town offers', () => {
+  const turn = { turn_id: 'ot_x', kind: 'agency', packet: { actions: ['pier', 'arcade', 'club_join', 'challenge', 'none'], messages: [], reply: { format: 'json', hint: '{}' } } }
+  const text = buildTurnPrompt(turn, {})
+  for (const zh of ['去码头', '去电玩城', '加入俱乐部', '向谁发起挑战', '什么都不做']) assert.ok(text.includes(zh), zh)
 })

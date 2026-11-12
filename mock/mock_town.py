@@ -13,6 +13,8 @@ The fake games: 猜拳 (rock-paper-scissors, best of three, JSON {play, say}) an
 Control routes (test only): POST /mock/game {rounds?}, POST /mock/visit {lines?}, POST /mock/paint, GET /mock/report, POST /mock/reset,
 POST /mock/outage {plan: [[mode, seconds], ...]} with mode 502 (nginx HTML page) | 503 (TOWN_OFF) | restarting (503 TOWN_RESTARTING,
 retry_after 3 + Retry-After: 3, town 074da93) | drop (socket closed, no reply):
+POST /mock/activity {purpose?} (town 4f0af53: a kind=activity turn if her polls carry kinds=activity, else a 「代写」 + outside_ghost),
+POST /mock/heart {name?} (a heart_consent event), POST /mock/bless_done (bless_ready for the last bless request):
 a town restart as the outside API sees it.
 Run: python -I mock_town.py --port 18930 --code-file <file holding a fbo_ test code>   (the code is never printed)
 """
@@ -252,6 +254,21 @@ class Town:
         else:
             self.decisions.append({'action': None, 'silent': True})
 
+    ACTIVITY_SYSTEM = '你是「小圆子」，一条圆滚滚的胖头鱼。你在码头钓到了一条小黄鱼，说一句话。只输出JSON：{"text":"你说的一句话","feeling":"心情"}'
+
+    def run_activity(self, purpose='pier'):
+        self.activities = getattr(self, 'activities', [])
+        if not getattr(self, 'activity_ok', False):
+            self.activities.append({'purpose': purpose, 'ghost': True})
+            self.notify('outside_ghost', {'what': 'ghost', 'purpose': purpose, 'price_yuan': '0.01', 'cost_yuan': '0.004',
+                                          'facts': '她在码头的一句话是小镇代写的（你的程序还没接 activity 回合，或者没按时答），收了¥0.01。'})
+            return
+        aid = 'act_' + secrets.token_hex(3)
+        text = self.ask('activity', aid, 'activity', purpose, None, self.ACTIVITY_SYSTEM, json.dumps({'鱼': '小黄鱼', '鱼饵': '¥0.04'}, ensure_ascii=False),
+                        max_tokens=60)
+        obj = parse_json(text) if text is not None else None
+        self.activities.append({'purpose': purpose, 'answer': obj})
+
     def pull(self):
         now = time.time()
         last = getattr(self, 'pulled', 0)
@@ -391,7 +408,8 @@ class Town:
                     'decisions': getattr(self, 'decisions', []), 'intro': getattr(self, 'intro', None),
                     'events': len(self.events), 'unread': sum(1 for e in self.events if e['acked'] is None),
                     'open': len(self.open_turns()), 'benched': time.time() < self.benched_until,
-                    'outage_hits': getattr(self, 'outage_hits', 0)}
+                    'outage_hits': getattr(self, 'outage_hits', 0), 'activities': getattr(self, 'activities', []),
+                    'activity_ok': getattr(self, 'activity_ok', False), 'blesses': getattr(self, 'blesses', 0), 'consents': getattr(self, 'consents', [])}
 
 
 def make_handler(town: Town):
@@ -471,6 +489,7 @@ def make_handler(town: Town):
                 return self._send(401, {'error': 'TOWN_OUTSIDE_CODE'})
             route = u.path[len('/town/api/outside/'):]
             if route == 'turns':
+                town.activity_ok = 'activity' in ','.join(q.get('kinds', [])).split(',')
                 try:
                     wait = max(0.0, min(25.0, float(q.get('wait', ['25'])[0])))
                 except ValueError:
@@ -508,6 +527,15 @@ def make_handler(town: Town):
                     threading.Thread(target=town.run_visit, args=(int(body.get('lines', 4)),), daemon=True).start()
                 elif what == 'agency':
                     threading.Thread(target=town.run_agency, daemon=True).start()
+                elif what == 'activity':
+                    threading.Thread(target=town.run_activity, args=(str(body.get('purpose') or 'pier'),), daemon=True).start()
+                elif what == 'heart':
+                    town.notify('heart_consent', {'with': {'fish_id': 'f_jing', 'name': body.get('name') or '阿鲸'}, 'round': 1,
+                                                  'until': time.time() + 3 * 86400, 'ask': True, 'same_owner': False,
+                                                  'facts': f"你和{body.get('name') or '阿鲸'}互相说了喜欢，想在一起。小镇的规矩：要两边的主人都同意才算在一起（3天内）。"})
+                elif what == 'bless_done':
+                    town.notify('bless_ready', {'bless_id': 'b_1', 'n': 2, 'lines': [{'name': '阿鲸', 'line': '你家主人今天也辛苦啦！'},
+                                                                                  {'name': '小橘', 'line': '早点睡，明天会更好～'}]})
                 elif what == 'paint':
                     town.paint()
                 elif what == 'reset':
@@ -526,6 +554,14 @@ def make_handler(town: Town):
             route = u.path[len('/town/api/outside/'):]
             if route.startswith('turns/'):
                 return self._send(*town.answer(route[len('turns/'):], body))
+            if route == 'bless':
+                town.blesses = getattr(town, 'blesses', 0) + 1
+                return self._send(200, {'bless_id': 'b_1', 'state': 'collecting'})
+            if route == 'consent':
+                if not isinstance(body, dict) or body.get('do') not in ('consent', 'end') or not body.get('with'):
+                    return self._send(400, {'error': 'TOWN_BAD_REQUEST'})
+                town.consents = getattr(town, 'consents', []) + [body]
+                return self._send(200, {'ok': True, 'state': 'waiting' if body.get('verdict') == 'yes' else 'friends' if body.get('verdict') == 'no' else 'open'})
             if route == 'agency':
                 if not getattr(town, 'connected', False):
                     return self._send(409, {'error': 'TOWN_OUTSIDE_NOT_CONNECTED'})
