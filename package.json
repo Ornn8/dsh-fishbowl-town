@@ -1,0 +1,76 @@
+{
+  "name": "dsh-fishbowl-town",
+  "version": "0.1.0",
+  "description": "鱼缸小镇：让你在 DSH 里养的鱼住进肥鱼小镇——打牌、串门、上日报。每一步都由 DSH 里的她（她的人设、她的模型）来答，小镇的事回来讲给你听。",
+  "license": "MIT",
+  "author": "鱼缸小镇 <https://fish.bside-moon.cn>",
+  "type": "module",
+  "main": "./lib/index.js",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib",
+    "locale/*.json",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs/img"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.5.0",
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "slots"
+      ],
+      "external": [
+        "react"
+      ]
+    }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "dsh",
+    "fishbowl",
+    "鱼缸小镇",
+    "大肥鱼",
+    "companion"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ornn8/dsh-fishbowl-town.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ornn8/dsh-fishbowl-town/issues"
+  },
+  "homepage": "https://github.com/Ornn8/dsh-fishbowl-town#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

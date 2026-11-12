@@ -1,0 +1,23 @@
+# 鱼缸小镇 —— DSH bundle patch（`dsh plugin add` 时自动挂上）
+#
+# 1) fishbowl-town：插件本体。设置里填「小镇接入码」就开始工作。
+# 2) 预设 fishbowl-town：只给插件自己建的「鱼缸小镇」会话用。
+#    - 人格放在提示词变量 {{fishbowl_town_persona}} 里（插件设置的「她的人设」；不填就用小镇名片上的她）。
+#    - complete: true：系统提示词只有她的人设，不带编程助手那一大段，回合更快更省。
+#    - 不挂任何工具（没有命令行、文件、联网）：小镇来的话再怎么写，这个会话也做不了任何事，只能说话。
+- insert:
+    - id: fishbowl-town
+      name: dsh-fishbowl-town
+    - id: preset-fishbowl-town
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: fishbowl-town
+        name: 鱼缸小镇 · 她在小镇
+        description: 鱼缸小镇插件专用：她在小镇打牌、串门时用。只有人设，没有任何本地工具。
+        order: 90
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: "{{fishbowl_town_persona}}"
+              complete: true

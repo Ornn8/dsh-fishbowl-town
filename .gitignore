@@ -1,0 +1,6 @@
+secrets/
+node_modules/
+.dshtest/
+*.log
+*.tgz
+__pycache__/
