@@ -72,5 +72,38 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "disclosure": {
+    "cloud": true,
+    "network": [
+      "https://fish.bside-moon.cn"
+    ],
+    "offlineMode": false,
+    "apiKeys": [
+      {
+        "name": "小镇接入码 (fbo_…)",
+        "env": "FISHBOWL_TOWN_CODE",
+        "storage": "file: <DSH_HOME>/fishbowl-town/settings.json or the DSH profile config",
+        "logged": false
+      }
+    ],
+    "permissions": {
+      "network": [
+        "https://fish.bside-moon.cn/town/api/outside/"
+      ],
+      "filesystem": [
+        "<DSH_HOME>/fishbowl-town/ (settings, state, saved pictures)"
+      ],
+      "env": [
+        "FISHBOWL_TOWN_CODE",
+        "DSH_HOME"
+      ],
+      "agentTools": "none (its preset has no tools)"
+    },
+    "dataSent": "only her answers to the town turns (moves and lines) and her own settings; never chats, memory or files",
+    "jurisdiction": [
+      "CN"
+    ],
+    "retention": "server"
   }
 }
