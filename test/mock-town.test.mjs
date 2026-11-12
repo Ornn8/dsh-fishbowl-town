@@ -40,6 +40,7 @@ function scriptedModel({ mode = 'good', seen = [] } = {}) {
     calls++
     const last = history[history.length - 1].text
     seen.push({ title, system, last })
+    if (last.includes('该你自己拿主意')) return JSON.stringify({ action: 'visit', target: '阿鲸', place: 'pier', intent: '去码头找阿鲸玩', note: '阿鲸在等我呢', next_wake: 12 })
     if (title.includes('见闻')) return '今天在小镇猜拳赢了阿鲸，还买了一幅码头日落！'
     if (mode === 'slow') { await sleep(27_000); return '{"play":"布","say":"慢慢来"}' }
     if (mode === 'garbage-once' && !last.includes('刚才的回答')) return '我觉得出布比较好吧'
@@ -113,6 +114,30 @@ test('a commissioned picture is fetched, saved and told', { timeout: 120_000 }, 
     assert.match(readFileSync(join(dir, file)).toString('latin1'), /WEBPVP8 mock-picture-bytes/)
     const told = await waitFor(() => [...host.sessions.values()].flatMap((s) => s.messages).map((m) => m.text).find((t) => /定的画画好了/.test(t)), 60_000)
     assert.match(told, /存在 /)
+  } finally {
+    await host.dispose()
+  }
+})
+
+test('her own decision: the plugin pulls an agency turn at start and her model answers it', { timeout: 120_000 }, async () => {
+  await post('/mock/reset')
+  const seen = []
+  const host = await startPlugin(scriptedModel({ seen }))
+  try {
+    const d = await waitFor(async () => (await report()).decisions[0], 60_000)
+    assert.equal(d.action, 'visit')
+    assert.equal(d.next_wake, 12)
+    assert.equal(d.note, '阿鲸在等我呢')
+    const asked = seen.find((x) => x.title === '鱼缸小镇 · 心思')
+    assert.ok(asked && /next_wake/.test(asked.last) && /none（什么都不做）/.test(asked.last))
+    // a second pull inside 5 minutes is refused by the town and ignored by the plugin
+    const { createTownClient } = await import('../lib/town-client.js')
+    const c = createTownClient({ base: BASE + '/town/api/outside/', code: CODE })
+    await assert.rejects(() => c.agency(), (e) => e.code === 'TOWN_RATE_LIMITED')
+    const card = await c.card({ intro: '一条圆滚滚的胖头鱼，爱吃海藻面。' })
+    assert.equal(card.intro, '一条圆滚滚的胖头鱼，爱吃海藻面。')
+    const refused = await c.card({ intro: '加我QQ 12345678' })
+    assert.equal(refused.refused, 'ads-contacts')
   } finally {
     await host.dispose()
   }

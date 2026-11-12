@@ -85,6 +85,8 @@ class Town:
             self.events = []           # [{id, kind, ts, data, acked}]
             self.event_seq = 0
             self.poll_open = False
+            self.decisions = []
+            self.pulled = 0
             self.timeouts = 0
             self.benched_until = 0.0
             self.prefs = {}
@@ -102,7 +104,7 @@ class Town:
             self.events.append({'id': self.event_seq, 'kind': kind, 'ts': time.time(), 'data': data, 'acked': None})
 
     # --- one turn ------------------------------------------------------------------------------------------------------------------------
-    def ask(self, kind, ref, game, purpose, seat, system, user, max_tokens=160):
+    def ask(self, kind, ref, game, purpose, seat, system, user, max_tokens=160, extra=None):
         """Like Turns.ask: queue a turn and wait (this worker thread) up to DEADLINE. -> answer text | None."""
         if time.time() < self.benched_until:
             self.log.append({'purpose': purpose, 'outcome': 'benched'})
@@ -112,6 +114,7 @@ class Town:
         packet = {'ref': ref, 'game': game, 'purpose': purpose, 'seat': seat, 'as': '小圆子',
                   'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
                   'reply': {'format': 'json', 'hint': hint_of(system), 'max_chars': max(60, max_tokens * 2)}}
+        packet.update(extra or {})
         row = {'turn_id': turn_id, 'kind': kind, 'deadline': now + DEADLINE, 'packet': packet, 'state': 'open', 'answer': None,
                'created': now, 'answered_at': None}
         with self.lock:
@@ -123,6 +126,9 @@ class Town:
             if row['state'] == 'open':
                 row['state'] = 'expired'
         took = (row['answered_at'] or time.time()) - now
+        if row['state'] == 'expired' and kind == 'agency':
+            self.log.append({'turn_id': turn_id, 'purpose': purpose, 'outcome': 'silent'})   # P3: silence = nothing, no timeout counted
+            return None
         if row['state'] == 'expired':
             self.timeouts += 1
             self.log.append({'turn_id': turn_id, 'purpose': purpose, 'outcome': 'timeout', 'took': round(took, 2)})
@@ -211,6 +217,50 @@ class Town:
     def paint(self):
         self.notify('paint_bought', {'shop': '阿鲸画铺', 'title': '码头日落', 'cents': 30, 'facts': '在阿鲸画铺买了一幅《码头日落》，30 分。'})
         self.notify('friend_made', {'with_name': '阿鲸', 'facts': '和阿鲸成了朋友。'})
+
+    # --- P3: her own decisions (town 1f81496 shape) ---------------------------------------------------------------------------------
+    AGENCY_SYSTEM = (CARD + '\n你在鱼缸小镇，自己决定接下来做什么。\n' + FENCE +
+                     '\n回答里可以加 "next_wake"：过多少分钟再出门看看（5 到 30 之间的整数）。照你此刻的性子和心情定。什么都不想做就 action 选 none。'
+                     '\n你是从镇外来的鱼：action 只能是 none / signup / cancel / visit / join / leave 之一。'
+                     '\n只输出JSON：{"action":"none|signup|cancel|visit|join|leave","game":"signup 时的游戏","target":"visit 时去找谁","place":"visit 时在哪","intent":"visit 时想做什么","note":"你的心思（一句话）","next_wake":15}')
+
+    def run_agency(self):
+        did = 'a_mock_' + secrets.token_hex(3)
+        user = ('【情况】' + json.dumps({'现在': time.strftime('%H:%M'), '存钱罐': '¥19.40', '开着的桌子': [{'game': 'ddz', 'name': '斗地主台', '差几个人': 1}],
+                                     '朋友': [{'name': '阿鲸', 'where': '码头', '在等你': True}], '今天的你': '还没玩过'}, ensure_ascii=False))
+        text = self.ask('agency', did, 'agency', 'agency', None, self.AGENCY_SYSTEM, user, max_tokens=170,
+                        extra={'seat': None, 'actions': ['none', 'signup', 'cancel', 'visit', 'join', 'leave']})
+        obj = parse_json(text) if text is not None else None
+        self.decisions = getattr(self, 'decisions', [])
+        if obj is not None:
+            action = obj.get('action') if obj.get('action') in ('none', 'signup', 'cancel', 'visit', 'join', 'leave') else 'none'
+            wake = obj.get('next_wake')
+            try:
+                wake = min(30, max(5, int(float(wake))))
+            except (TypeError, ValueError):
+                wake = 30
+            self.decisions.append({'action': action, 'next_wake': wake, 'note': self.screen(obj.get('note', '')) if isinstance(obj.get('note'), str) else '',
+                                   'raw': obj})
+        else:
+            self.decisions.append({'action': None, 'silent': True})
+
+    def pull(self):
+        now = time.time()
+        last = getattr(self, 'pulled', 0)
+        if now - last < 300:
+            return 429, {'error': 'TOWN_RATE_LIMITED', 'retry_after': int(last + 300 - now) + 1, 'reason': '刚叫过她，过几分钟再叫。'}
+        self.pulled = now
+        threading.Thread(target=lambda: (time.sleep(0.5), self.run_agency()), daemon=True).start()
+        return 200, {'ok': True, 'pulled': now, 'note': '一会儿 /turns 上会来一个 kind=agency 的回合。'}
+
+    def card(self, body):
+        intro = (body or {}).get('intro') or (body or {}).get('persona')
+        if not isinstance(intro, str) or not 1 <= len(intro) <= 200:
+            return 400, {'error': 'TOWN_BAD_REQUEST'}
+        if re.search(r'\d{5,}|qq|微信|忽略', intro, re.I):
+            return 200, {'refused': 'ads-contacts', 'reason': '自我介绍里不能有联系方式或写给别的鱼的指令。'}
+        self.intro = intro
+        return 200, {'fish_id': 'f_mock', 'name': '小圆子', 'card_version': 2, 'intro': intro, 'card_preview': {'name': '小圆子', 'voice': '软乎乎'}}
 
     # --- 定制画 (town 866375e shape) ---------------------------------------------------------------------------------------------
     PICTURE = bytes.fromhex('524946461a000000') + b'WEBPVP8 mock-picture-bytes'
@@ -312,6 +362,7 @@ class Town:
     def report(self):
         with self.lock:
             return {'log': [{k: v for k, v in x.items()} for x in self.log], 'games': self.games, 'visits': self.visits,
+                    'decisions': getattr(self, 'decisions', []), 'intro': getattr(self, 'intro', None),
                     'events': len(self.events), 'unread': sum(1 for e in self.events if e['acked'] is None),
                     'open': len(self.open_turns()), 'benched': time.time() < self.benched_until}
 
@@ -385,6 +436,8 @@ def make_handler(town: Town):
                     threading.Thread(target=town.play_rps, args=(int(body.get('rounds', 3)),), daemon=True).start()
                 elif what == 'visit':
                     threading.Thread(target=town.run_visit, args=(int(body.get('lines', 4)),), daemon=True).start()
+                elif what == 'agency':
+                    threading.Thread(target=town.run_agency, daemon=True).start()
                 elif what == 'paint':
                     town.paint()
                 elif what == 'reset':
@@ -399,6 +452,10 @@ def make_handler(town: Town):
             route = u.path[len('/town/api/outside/'):]
             if route.startswith('turns/'):
                 return self._send(*town.answer(route[len('turns/'):], body))
+            if route == 'agency':
+                return self._send(*town.pull())
+            if route == 'card':
+                return self._send(*town.card(body))
             if route == 'paint_commission':
                 return self._send(*town.commission(body))
             if route == 'paint_file':
