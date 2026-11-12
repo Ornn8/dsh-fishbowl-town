@@ -12,7 +12,7 @@ The fake games: 猜拳 (rock-paper-scissors, best of three, JSON {play, say}) an
 
 Control routes (test only): POST /mock/game {rounds?}, POST /mock/visit {lines?}, POST /mock/paint, GET /mock/report, POST /mock/reset,
 POST /mock/outage {plan: [[mode, seconds], ...]} with mode 502 (nginx HTML page) | 503 (TOWN_OFF) | restarting (503 TOWN_RESTARTING,
-retry_after 3 + Retry-After: 3, town 17c9b14) | drop (socket closed, no reply):
+retry_after 3 + Retry-After: 3, town 074da93) | drop (socket closed, no reply):
 a town restart as the outside API sees it.
 Run: python -I mock_town.py --port 18930 --code-file <file holding a fbo_ test code>   (the code is never printed)
 """
@@ -315,7 +315,7 @@ class Town:
         with self.lock:
             # town 521be3e: the newest poll wins (an older one answers empty at once)
             self.poll_gen = getattr(self, 'poll_gen', 0) + 1
-            self.connected = True  # town 17c9b14: not_connected until her program's first poll
+            self.connected = True  # town 074da93: not_connected until her program's first poll
             mine = self.poll_gen
             self.lock.notify_all()
             end = time.time() + wait
