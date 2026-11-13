@@ -12,6 +12,7 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
   const workspaces = []
   let seq = 0
   const routes = new Map() // path -> handler (webServer.register kind 'exact')
+  const commands = new Map() // ctx.commands.register (the owner's /town)
   const tools = new Map() // name -> definition (ctx.tools.register, raw definitions as dsh-tools accepts them)
   const fence = { rejection: undefined } // what connection.requestRejection answers
 
@@ -105,6 +106,7 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
       register(r) { routes.set(r.path, r.handler); return () => routes.delete(r.path) },
     },
     connection: { requestRejection: () => fence.rejection },
+    commands: { register(def) { commands.set(def.name, def); return () => commands.delete(def.name) } },
     tools: {
       register(def) {
         if (!def || typeof def.name !== 'string' || typeof def.execute !== 'function' || typeof def.output?.render !== 'function') throw new TypeError('bad tool')
@@ -145,6 +147,13 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
     return { status: res.statusCode, json: out ? JSON.parse(out) : null }
   }
 
+  /** The owner types a slash command (e.g. runCommand('town', 'status')) -> the handler's result. */
+  async function runCommand(name, rawInput = '') {
+    const def = commands.get(name)
+    if (!def) throw new Error('no command ' + name)
+    return def.handler({ rawInput })
+  }
+
   /** The model calls one of the tools the plugin registered (in a chat session of the owner's). */
   async function callTool(name, args = {}, { sessionId } = {}) {
     const def = tools.get(name)
@@ -178,6 +187,7 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
     ownerChat,
     tools,
     callTool,
+    runCommand,
     http,
     async dispose() { for (const d of disposers.reverse()) await d() },
   }

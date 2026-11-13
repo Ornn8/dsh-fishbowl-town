@@ -102,6 +102,10 @@ class Town:
             self.log = []              # every turn's outcome
             self.games = []
             self.visits = []
+            self.new = False
+            self.floors = None
+            self.settings_calls = []
+            self.agency_turns = 0
             self.lock.notify_all()
 
     # --- feed ----------------------------------------------------------------------------------------------------------------------------
@@ -231,29 +235,30 @@ class Town:
                      '\n你是从镇外来的鱼：action 只能是 none / signup / cancel / visit / join / leave 之一。'
                      '\n只输出JSON：{"action":"none|signup|cancel|visit|join|leave","game":"signup 时的游戏","target":"visit 时去找谁","place":"visit 时在哪","intent":"visit 时想做什么","note":"你的心思（一句话）","next_wake":15}')
 
-    def run_agency(self):
+    def run_agency(self, reasons=None):
         did = 'a_mock_' + secrets.token_hex(3)
         user = ('【情况】' + json.dumps({'现在': time.strftime('%H:%M'), '存钱罐': '¥19.40', '开着的桌子': [{'game': 'ddz', 'name': '斗地主台', '差几个人': 1}],
                                      '朋友': [{'name': '阿鲸', 'where': '码头', '在等你': True}], '今天的你': '还没玩过'}, ensure_ascii=False))
         text = self.ask('agency', did, 'agency', 'agency', None, self.AGENCY_SYSTEM, user, max_tokens=170,
-                        extra={'seat': None, 'actions': ['none', 'signup', 'cancel', 'visit', 'join', 'leave']})
+                        extra={'seat': None, 'actions': ['none', 'signup', 'cancel', 'visit', 'join', 'leave'], **({'reasons': reasons} if reasons else {})})
         obj = parse_json(text) if text is not None else None
         self.decisions = getattr(self, 'decisions', [])
         if obj is not None:
             action = obj.get('action') if obj.get('action') in ('none', 'signup', 'cancel', 'visit', 'join', 'leave') else 'none'
             wake = obj.get('next_wake')
             try:
-                wake = min(30, max(5, int(float(wake))))
+                wake = min(480, max(5, int(float(wake))))
             except (TypeError, ValueError):
-                wake = 30
+                wake = 120
             if action == 'signup':
                 self.signups = [{'game': obj.get('game') or 'ddz', 'state': 'waiting'}]
             elif action == 'cancel':
                 self.signups = []
-            self.decisions.append({'action': action, 'next_wake': wake, 'note': self.screen(obj.get('note', '')) if isinstance(obj.get('note'), str) else '',
+            self.decisions.append({'action': action, 'next_wake': wake, 'plan': obj.get('plan'), 'note': self.screen(obj.get('note', '')) if isinstance(obj.get('note'), str) else '',
                                    'raw': obj})
         else:
             self.decisions.append({'action': None, 'silent': True})
+        self.agency_turns = getattr(self, 'agency_turns', 0) + 1
 
     ACTIVITY_SYSTEM = '你是「小圆子」，一条圆滚滚的胖头鱼。你在码头钓到了一条小黄鱼，说一句话。只输出JSON：{"text":"你说的一句话","feeling":"心情"}'
 
@@ -432,7 +437,7 @@ class Town:
                     'events': len(self.events), 'unread': sum(1 for e in self.events if e['acked'] is None),
                     'open': len(self.open_turns()), 'benched': time.time() < self.benched_until,
                     'outage_hits': getattr(self, 'outage_hits', 0), 'activities': getattr(self, 'activities', []),
-                    'activity_ok': getattr(self, 'activity_ok', False), 'blesses': getattr(self, 'blesses', 0), 'consents': getattr(self, 'consents', [])}
+                    'activity_ok': getattr(self, 'activity_ok', False), 'floors': getattr(self, 'floors', None), 'settings_calls': getattr(self, 'settings_calls', []), 'agency_turns': getattr(self, 'agency_turns', 0), 'blesses': getattr(self, 'blesses', 0), 'consents': getattr(self, 'consents', [])}
 
 
 def make_handler(town: Town):
@@ -535,6 +540,10 @@ def make_handler(town: Town):
                 return self._send(*town.read_events(after, limit))
             if route == 'status':
                 return self._send(200, town.status())
+            if route == 'spending':  # town ec17822: only a new town has it (an old one: 404)
+                if not getattr(town, 'new', False):
+                    return self._send(404, {'error': 'TOWN_NOT_FOUND'})
+                return self._send(200, {'fish_id': 'f_mock', 'currency': 'CNY', 'today': '0.12', 'd7': '0.80', 'd30': '2.50', 'total': '3.10', 'by_kind': {'model': '2.00', 'visit': '1.10'}, 'as_of': time.time()})
             if route == 'lobby':  # 自助大厅：真小镇 11-13 的一份大厅（mock/lobby_sample.json）+ 她自己报的
                 return self._send(200, town.lobby())
             if route == 'bonds':  # 她在小镇的关系（town ec624b7 的形状；plugin 0.2.9 的「小镇近况」）
@@ -559,7 +568,9 @@ def make_handler(town: Town):
                 elif what == 'visit':
                     threading.Thread(target=town.run_visit, args=(int(body.get('lines', 4)),), daemon=True).start()
                 elif what == 'agency':
-                    threading.Thread(target=town.run_agency, daemon=True).start()
+                    threading.Thread(target=town.run_agency, args=(body.get('reasons'),), daemon=True).start()
+                elif what == 'new':
+                    town.new = bool(body.get('on', True))
                 elif what == 'activity':
                     threading.Thread(target=town.run_activity, args=(str(body.get('purpose') or 'pier'),), daemon=True).start()
                 elif what == 'heart':
@@ -633,6 +644,11 @@ def make_handler(town: Town):
             if route == 'paint_file':
                 return self._send(*town.paint_file(body))
             if route == 'settings':
+                town.settings_calls = getattr(town, 'settings_calls', []) + [body]
+                if {'wake_min_minutes', 'quiet_hours'} & set(body):
+                    if not getattr(town, 'new', False):
+                        return self._send(400, {'error': 'TOWN_BAD_REQUEST'})
+                    town.floors = {k: body[k] for k in ('wake_min_minutes', 'quiet_hours') if k in body}
                 if isinstance(body.get('prefs'), dict):
                     town.prefs.update(body['prefs'])
                 if 'paused' in body:

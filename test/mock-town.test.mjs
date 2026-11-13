@@ -92,13 +92,13 @@ test('a good fish plays a game and a visit, and hears the news', { timeout: 120_
     assert.ok(r.visits[0].answered >= 2 && r.visits[0].default === 0)
     const answered = r.log.filter((x) => x.outcome === 'answered')
     assert.ok(answered.every((x) => x.took < 25), 'inside the deadline')
-    // the news reaches her "见闻" session
+    // 0.3.3: the plugin reads the events (digest, visit, picture) but no longer calls her model to retell each one in "见闻":
+    // the diary keeps them (her chat note carries them); only what needs her (heart consent, blessings) is told.
+    await waitFor(async () => (await report()).unread === 0, 60_000)
     const toldText = () => [...host.sessions.values()].filter((s) => s.title === '鱼缸小镇 · 见闻')
       .flatMap((s) => s.messages.filter((m) => m.role === 'user').map((m) => m.text)).join('\n')
-    const told = await waitFor(() => (/码头日落/.test(toldText()) && /串门/.test(toldText()) ? toldText() : null), 60_000)
-    assert.match(told, /猜拳/)
-    assert.match(told, /串门/)
-    assert.match(told, /码头日落/)
+    assert.equal(toldText(), '', 'ordinary news does not cost a model call')
+    assert.equal(seen.filter((x) => x.title.includes('见闻')).length, 0)
     // her town sessions run the town preset, whose system prompt is only her persona
     const gameSession = [...host.sessions.values()].find((s) => s.title === '鱼缸小镇 · 牌桌')
     assert.equal(gameSession.preset, 'fishbowl-town')
@@ -376,12 +376,13 @@ test('her chat with him is found by itself, gets the town news, and her town cho
     await post('/mock/visit', { lines: 2 })
     await waitFor(async () => (await report()).visits.length === 1, 60_000)
     assert.match(seen.find((x) => x.title === '鱼缸小镇 · 串门').last, /【你和主人最近的事】/)
-    // 0.2.10: town news go to 「见闻」 only — never a turn in her chat with him (it bent her everyday replies)
+    // 0.2.10: town news never become a turn in her chat with him (it bent her everyday replies); 0.3.3: ordinary news are not retold by her model at all
     const before = host.sessions.get(chat.sid).messages.length
     await post('/mock/game', { rounds: 2 })
-    await waitFor(() => [...host.sessions.values()].some((s) => s.title === '鱼缸小镇 · 见闻' && s.messages.some((m) => m.role === 'user' && /鱼缸小镇/.test(m.text))), 60_000)
+    await waitFor(async () => (await report()).unread === 0 && (await report()).games.length > 0, 60_000)
     await sleep(300)
     assert.equal(host.sessions.get(chat.sid).messages.length, before, 'nothing was posted into her chat with him')
+    assert.ok(![...host.sessions.values()].some((s) => s.title === '鱼缸小镇 · 见闻' && s.messages.some((m) => m.role === 'user')), 'ordinary news cost no model call')
     st = await state()
     assert.ok(st.ownerLife.every((l) => !/猜拳赢啦/.test(l)), 'her answer to town news is not mixed into their life')
     // he switches it off
@@ -471,6 +472,95 @@ test('a town session the owner types in is given to him: town turns move to a ne
     assert.equal(s.messages.length, mine, 'no town turn went into the session he chats in')
     const tables = [...host.sessions.entries()].filter(([id, x]) => x.title === '鱼缸小镇 · 牌桌' && id !== sid)
     assert.ok(tables.length >= 1, 'the game went to a new 牌桌 session')
+  } finally {
+    await host.dispose()
+  }
+})
+
+// 0.3.3: she plans her own hours; a wake with nothing for her costs no model call; the owner's floors; spending; /town history.
+function planningModel(seen) {
+  return async ({ history, title }) => {
+    const last = history[history.length - 1].text
+    seen.push({ title, last })
+    if (last.includes('该你自己拿主意')) {
+      return JSON.stringify({ action: 'none', plan: { hours: 3, doing: '回家睡个午觉', steps: [{ in_minutes: 120, do: 'signup', game: 'ddz' }] }, say: '先歇着', note: '有点困' })
+    }
+    return '{}'
+  }
+}
+const agencyCalls = (seen) => seen.filter((x) => x.title === '鱼缸小镇 · 心思').length
+
+test('0.3.3 on an old town: her plan sets her rest, idle wakes and rests cost no model call, an invitation still wakes her', { timeout: 120_000 }, async () => {
+  await post('/mock/reset')
+  const seen = []
+  const host = await startPlugin(planningModel(seen))
+  try {
+    const d0 = await waitFor(async () => (await report()).decisions[0], 60_000)
+    assert.equal(d0.next_wake, 180, 'her 3 hours became next_wake 180 (the old town only knows minutes)')
+    assert.equal(d0.plan.hours, 3)
+    assert.equal(d0.plan.doing, '回家睡个午觉')
+    assert.equal(d0.raw.say, '先歇着', 'free-text say is passed through')
+    assert.equal(agencyCalls(seen), 1)
+    const asked = seen.find((x) => x.title === '鱼缸小镇 · 心思')
+    assert.match(asked.last, /"plan"/)
+    assert.match(asked.last, /「say」/)
+    // the town wakes her for a table while she rests: the plugin answers "not now", no model
+    await post('/mock/agency', { reasons: ['table'] })
+    const d1 = await waitFor(async () => (await report()).decisions[1], 30_000)
+    assert.equal(d1.action, 'none')
+    assert.ok(d1.next_wake >= 170 && d1.next_wake <= 180, 'sleeps until her own wake time: ' + d1.next_wake)
+    assert.equal(agencyCalls(seen), 1, 'no model call for a table while she rests')
+    // but an invitation to her, in her rest, is hers to answer
+    await post('/mock/agency', { reasons: ['invited'] })
+    await waitFor(async () => (await report()).decisions[2], 60_000)
+    assert.equal(agencyCalls(seen), 2)
+    // the page and /town history / status tell the owner (the old town has no spending: only the local count)
+    const st = (await host.http('/fishbowl-town/state')).json
+    assert.ok(st.schedule.next, 'next wake shown')
+    assert.equal(st.usage.today.calls, 2)
+    assert.equal(st.usage.today.skipped, 1)
+    assert.equal(st.spend == null, true)
+    assert.equal(st.wakeMinMinutes, 0)
+    const hist = (await host.runCommand('town', 'history')).text
+    assert.match(hist, /她决定：什么都不做/)
+    const status = (await host.runCommand('town', 'status')).text
+    assert.match(status, /她的模型被叫了：今天 2 次/)
+    assert.match(status, /下次拿主意/)
+    assert.doesNotMatch(status, /在小镇花的钱/)
+    // the old town refuses the floors: the plugin keeps them itself
+    assert.equal((await report()).floors, null)
+  } finally {
+    await host.dispose()
+  }
+})
+
+test('0.3.3 on a new town: floors are told to the town, spending shows today / 7 d / 30 d / total, bad quiet hours are refused', { timeout: 120_000 }, async () => {
+  await post('/mock/reset')
+  await post('/mock/new', { on: true })
+  const seen = []
+  const h = (new Date(Date.now() + 8 * 3600_000)).getUTCHours()
+  const p2 = (n) => String(n % 24).padStart(2, '0')
+  const quiet = `${p2(h + 3)}:00-${p2(h + 5)}:30`
+  const host = await startPlugin(planningModel(seen), { wakeMinMinutes: 45, quietHours: quiet })
+  try {
+    await waitFor(async () => (await report()).floors, 30_000)
+    const fl = (await report()).floors
+    assert.equal(fl.wake_min_minutes, 45)
+    assert.deepEqual(fl.quiet_hours, { from: `${p2(h + 3)}:00`, to: `${p2(h + 5)}:30` })
+    // spending (read at most once a minute; the first look kicks the read)
+    await host.http('/fishbowl-town/state')
+    const sp = await waitFor(async () => (await host.http('/fishbowl-town/state')).json.spend, 10_000)
+    assert.equal(sp.total, '3.10')
+    const status = (await host.runCommand('town', 'status')).text
+    assert.match(status, /在小镇花的钱：今天 ¥0\.12 · 7 天 ¥0\.80 · 30 天 ¥2\.50 · 一共 ¥3\.10/)
+    // changed from the page: pushed again; a wake gap of 3 is raised to the town's smallest (5)
+    let r = await host.http('/fishbowl-town/save', { method: 'POST', body: { wakeMinMinutes: 3, quietHours: '' } })
+    assert.equal(r.status, 200)
+    await waitFor(async () => (await report()).floors?.wake_min_minutes === 5, 10_000)
+    assert.equal((await report()).floors.quiet_hours, null)
+    r = await host.http('/fishbowl-town/save', { method: 'POST', body: { quietHours: '晚上' } })
+    assert.equal(r.status, 400)
+    assert.equal((await host.http('/fishbowl-town/state')).json.quietHours, '')
   } finally {
     await host.dispose()
   }
