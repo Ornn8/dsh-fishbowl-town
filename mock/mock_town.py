@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import re
 import secrets
@@ -383,6 +384,26 @@ class Town:
             nxt = rows[-1]['id'] if rows else (after if after is not None else (self.events[-1]['id'] if self.events else 0))
             return 200, {'items': [{k: e[k] for k in ('id', 'kind', 'ts', 'data')} for e in rows], 'next': nxt}
 
+    def lobby(self):
+        if not hasattr(self, '_lobby'):
+            here = os.path.dirname(os.path.abspath(__file__))
+            try:   # a copy of a real 11-13 lobby (names replaced), dev checkout only; else a small built-in one
+                with open(os.path.join(here, 'lobby_sample.json'), encoding='utf-8') as fh:
+                    self._lobby = json.load(fh)
+            except OSError:
+                self._lobby = {'tables': [{'venue_id': 'v_hall_ww', 'name': '桌游馆', 'game': 'ww', 'game_zh': '狼人杀', 'state': 'open', 'joinable': True,
+                                           'seats_min': 8, 'seats_max': 12, 'waiting': 5, 'waiting_names': ['阿鲸', '小满'], 'seats_left': 3, 'fee_yuan': 0.02}],
+                               'games': [{'game': 'ww', 'game_zh': '狼人杀', 'seats_min': 8, 'seats_max': 12, 'waiting_any': True, 'fee_yuan_from': 0.02, 'venues': ['v_hall_ww']},
+                                         {'game': 'ddz', 'game_zh': '斗地主', 'seats_min': 3, 'seats_max': 3, 'waiting_any': False, 'fee_yuan_from': 0.02, 'venues': ['v_hall_ddz']}],
+                               'activities': [], 'places': [{'place': 'pier', 'name_zh': '海滨码头', 'how': 'do=fish 钓鱼 / swim 游泳', 'price_rule': '镇上价格的两倍'},
+                                                            {'place': 'arcade', 'name_zh': '电玩城', 'how': 'do=play machine=…', 'price_rule': '镇上价格的两倍'}],
+                               'fish': [{'fish_id': 'f_whale', 'name': '阿鲸', 'friend': True, 'resident': False}, {'fish_id': 'f_man', 'name': '小满', 'friend': False, 'resident': True}],
+                               'rules': {'one_open_signup': True, 'self_fill_wait_s': 180}}
+        out = dict(self._lobby)
+        signed = getattr(self, 'signed', None)
+        out['mine'] = {'signups': [dict(signed, waiting_s=30)] if signed else [], 'at_table': False, 'visiting': False}
+        return out
+
     def status(self):
         return {'fish_id': 'f_mock', 'town_name': '小圆子', 'badge': '外来', 'state': 'ready', 'signups': list(getattr(self, 'signups', [])), 'game': None,
                 'outside_state': 'not_connected' if not getattr(self, 'connected', False) else 'benched' if time.time() < self.benched_until else ('paused' if self.paused else 'in_town'),
@@ -514,6 +535,8 @@ def make_handler(town: Town):
                 return self._send(*town.read_events(after, limit))
             if route == 'status':
                 return self._send(200, town.status())
+            if route == 'lobby':  # 自助大厅：真小镇 11-13 的一份大厅（mock/lobby_sample.json）+ 她自己报的
+                return self._send(200, town.lobby())
             if route == 'bonds':  # 她在小镇的关系（town ec624b7 的形状；plugin 0.2.9 的「小镇近况」）
                 import time as _t
                 now = int(_t.time())
@@ -564,6 +587,33 @@ def make_handler(town: Town):
             route = u.path[len('/town/api/outside/'):]
             if route.startswith('turns/'):
                 return self._send(*town.answer(route[len('turns/'):], body))
+            # 自助大厅（town self-serve, 2026-11-13）：play / visit / goto / signup_cancel
+            if route in ('play', 'visit', 'goto', 'signup_cancel'):
+                town.self_serve = getattr(town, 'self_serve', []) + [[route, body]]
+                lb = town.lobby()
+                if route == 'play':
+                    if not isinstance(body, dict) or not (body.get('venue_id') or body.get('game') or body.get('activity_id')):
+                        return self._send(400, {'error': 'TOWN_BAD_REQUEST'})
+                    if getattr(town, 'signed', None) and not body.get('replace'):
+                        return self._send(409, {'error': 'TOWN_ALREADY_SIGNED', 'reason': town.signed['signup_id']})
+                    g = body.get('game')
+                    t = next((x for x in lb['tables'] if x['venue_id'] == body.get('venue_id')), None)
+                    gm = next((x for x in lb['games'] if x['game'] == (g or (t or {}).get('game'))), None)
+                    if (body.get('venue_id') and not t) or (g and not gm):
+                        return self._send(404, {'error': 'TOWN_NOT_FOUND'})
+                    town.signed = {'signup_id': 's_' + secrets.token_hex(3), 'game': gm['game'], 'game_zh': gm['game_zh'], 'venue_id': (t or {}).get('venue_id') or gm['venues'][0], 'state': 'waiting'}
+                    return self._send(200, {'ok': True, **town.signed, 'activity_id': None, 'fill_after_s': 180, 'note': '等人齐；3 分钟没人来镇民补位'})
+                if route == 'signup_cancel':
+                    town.signed = None
+                    return self._send(200, {'ok': True})
+                if route == 'visit':
+                    f = next((x for x in lb['fish'] if x['fish_id'] == body.get('fish_id') or x['name'] == body.get('name')), None)
+                    if not f:
+                        return self._send(404, {'error': 'TOWN_NOT_FOUND', 'outcome': 'unknown'})
+                    return self._send(200, {'ok': True, 'visit_id': 'vi_' + secrets.token_hex(3), 'state': 'knocking', 'note': f"去敲{f['name']}的门"})
+                if body.get('place') not in ('pier', 'arcade'):
+                    return self._send(404, {'error': 'TOWN_NOT_FOUND'})
+                return self._send(200, {'ok': True, 'place': body['place'], 'outcome': '钓到一条小黄鱼' if body['place'] == 'pier' else '投进 7 个球', 'ref': 'r_1', 'note': ''})
             if route == 'bless':
                 town.blesses = getattr(town, 'blesses', 0) + 1
                 return self._send(200, {'bless_id': 'b_1', 'state': 'collecting'})
