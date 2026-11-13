@@ -512,6 +512,14 @@ def make_handler(town: Town):
                 return self._send(*town.read_events(after, limit))
             if route == 'status':
                 return self._send(200, town.status())
+            if route == 'bonds':  # 她在小镇的关系（town ec624b7 的形状；plugin 0.2.9 的「小镇近况」）
+                import time as _t
+                now = int(_t.time())
+                return self._send(200, {'friends': [{'fish_id': 'f1', 'name': '阿鲸', 'friend': True, 'warmth': 8, 'met': 6, 'last_seen': now - 600}],
+                                        'rivals': [], 'couple': None, 'crush': {'fish_id': 'f2', 'name': '小满'},
+                                        'ties': [{'kind': 'promise', 'who': 'f1', 'who_name': '阿鲸', 'what': '打牌', 'due': now + 26 * 3600, 'when_zh': '明天20:00'}],
+                                        'missed': [{'fish_id': 'f2', 'name': '小满', 'line': '泡泡今天怎么没来，有点想她', 'ts': now - 3600}],
+                                        'buddy': {'fish_id': 'f1', 'name': '阿鲸', 'since': now - 86400}, 'guiding': []})
             return self._send(404, {'error': 'TOWN_NOT_FOUND'})
 
         def do_POST(self):
