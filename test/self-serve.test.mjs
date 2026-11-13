@@ -107,3 +107,13 @@ test('town errors and off duty become plain words, never throw', async () => {
 test('the self tools are hidden in town sessions except her own decisions', () => {
   for (const n of ['fishbowl_town_look', 'fishbowl_town_play', 'fishbowl_town_visit', 'fishbowl_town_place']) assert.ok(CHAT_TOOL_NAMES.includes(n))
 })
+
+test('balance too low: the owner gets the top-up link, she never does', async () => {
+  const short = new TownError('TOWN_PIGGY_SHORT', 409, '座位费 ¥0.04')
+  assert.match(failText(short, { owner: true }), /https:\/\/fish\.bside-moon\.cn\/pay\/afdian\//)
+  assert.doesNotMatch(failText(short), /pay|充值|afdian/)
+  assert.match(failText(new TownError('HTTP_402', 402), { owner: true }), /充值/)
+  const ss = createSelfServe({ live: fakeLive([], { play: async () => { throw short } }), journal: journal() })
+  assert.doesNotMatch(await ss.play('狼人杀', 'her'), /充值|afdian/)
+  assert.match((await runTownCommand('play 狼人杀', { selfServe: ss, status: async () => '' })).text, /afdian/)
+})

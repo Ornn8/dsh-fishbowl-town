@@ -405,7 +405,7 @@ class Town:
         return out
 
     def status(self):
-        return {'fish_id': 'f_mock', 'town_name': '小圆子', 'badge': '外来', 'state': 'ready', 'signups': list(getattr(self, 'signups', [])), 'game': None,
+        return {'fish_id': 'f_mock', 'town_name': '小圆子', 'badge': '外来', 'state': 'ready', 'piggy_yuan': '19.15', 'today_town_spend_yuan': '0.0400', 'signups': list(getattr(self, 'signups', [])), 'game': None,
                 'outside_state': 'not_connected' if not getattr(self, 'connected', False) else 'benched' if time.time() < self.benched_until else ('paused' if self.paused else 'in_town'),
                 'turns': {'prefs': self.prefs, 'webhook_set': False, 'benched_until': self.benched_until or None,
                           'timeouts_in_a_row': self.timeouts, 'games': ['rps']}}

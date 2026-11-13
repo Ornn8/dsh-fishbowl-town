@@ -305,14 +305,11 @@ test('her chat knows what she decided in town, and 「去小镇」 carries his w
   const seen = []
   const host = await startPlugin(scriptedModel({ seen }))
   try {
-    assert.ok(host.tools.has('fishbowl_town_recent') && host.tools.has('fishbowl_town_go'))
+    // 0.3.1: the read-only 「小镇近况」 tool is gone from her chat (she called it unprompted and recited everything);
+    // what she decided reaches her chat through the background note instead
+    assert.ok(!host.tools.has('fishbowl_town_recent') && host.tools.has('fishbowl_town_go'))
     // the plugin pulls a decision turn at start: she decides to visit 阿鲸
     await waitFor(async () => (await report()).decisions.length === 1)
-    let recent = await waitFor(async () => { const t = await host.callTool('fishbowl_town_recent'); return /去串门/.test(t) ? t : null }, 10_000)
-    assert.match(recent, /阿鲸在等我呢/, 'her own note, as hers')
-    assert.match(recent, /你现在：在小镇/)
-    assert.match(recent, /分钟后会再拿一次主意/)
-    assert.match(recent, /报名/, 'she knows signing up is something she can do')
     // the town allows one pull per 5 minutes: right after the start pull, the wish is kept for her next decision
     let r = await host.callTool('fishbowl_town_go', { wish: '去打两把海龟汤' })
     assert.match(r, /刚叫你拿过主意/)
@@ -328,12 +325,6 @@ test('her chat knows what she decided in town, and 「去小镇」 carries his w
     assert.match(mind, /去串门（阿鲸/, 'her earlier decision is in front of her')
     const town = (await report()).decisions.pop()
     assert.equal(town.action, 'signup', 'the town got her signup decision')
-    recent = await host.callTool('fishbowl_town_recent')
-    assert.match(recent, /那时主人跟你说过：「去打两把海龟汤」/)
-    assert.match(recent, /报了名在等开桌：海龟汤/)
-    assert.equal(recent.match(/主人跟你说：「去打两把海龟汤」/g).length, 1, 'the same wish twice is one line')
-    assert.doesNotMatch(recent, /还没带到/)
-    console.log('小镇近况 as her chat sees it:\n' + recent)
     // paused in town: she says so instead of pretending
     await fetch(BASE + '/town/api/outside/settings', { method: 'POST', headers: { Authorization: 'Bearer ' + CODE, 'Content-Type': 'application/json' }, body: JSON.stringify({ paused: true }) })
     r = await host.callTool('fishbowl_town_go', { wish: '再去玩' })
@@ -399,13 +390,9 @@ test('her chat with him is found by itself, gets the town news, and her town cho
     assert.deepEqual({ how: r.json.newsTo.how, sid: r.json.newsTo.sid }, { how: 'bound', sid: code.sid })
     r = await host.http(R + '/save', { method: 'POST', body: { reportSessionId: '' } })
     assert.equal(r.json.newsTo.sid, chat.sid, 'back to automatic')
-    // where she used 「小镇近况」 wins over message counts
-    await host.callTool('fishbowl_town_recent', {}, { sessionId: code.sid })
+    // where she used a town tool wins over message counts
+    await host.callTool('fishbowl_town_look', {}, { sessionId: code.sid })
     assert.deepEqual({ how: (await state()).newsTo.how, sid: (await state()).newsTo.sid }, { how: 'tools', sid: code.sid })
-    // first person: her memories, not another session's records
-    const recent = await host.callTool('fishbowl_town_recent', {}, { sessionId: chat.sid })
-    assert.match(recent, /是你的记忆/)
-    assert.doesNotMatch(recent, /「鱼缸小镇 · 心思」里/)
   } finally {
     await host.dispose()
   }
