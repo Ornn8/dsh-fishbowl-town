@@ -28,7 +28,11 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
       session: { id: sid },
       status: 'idle',
       denied: [], // tools masked for this agent (agent.ctx.tools.restrict)
-      ctx: { tools: { restrict(filter) { agent.denied.push(...(filter.deny || [])); return () => {} } } },
+      // like DSH 0.2.1: restrict() throws on a name that is not a registered global tool (0.3.1 shipped a stale name and the mask failed)
+      ctx: { tools: { restrict(filter) {
+        for (const n of filter.deny || []) if (!tools.has(n)) throw new Error(`tools.restrict() names unknown global tool "${n}"`)
+        agent.denied.push(...(filter.deny || [])); return () => {}
+      } } },
       followup(message) {
         if (!message || message.role !== 'user' || !Array.isArray(message.content)) throw new Error('SessionFormatError')
         queue.push(message)

@@ -193,7 +193,7 @@ class Town:
         result['score'] = wins
         self.games.append(result)
         self.notify('outside_fee', {'gid': gid, 'cents': 5, 'facts': '猜拳馆座位费 5 分（1 分 × 5）'})
-        self.notify('digest', {'gid': gid, 'game': 'rps', 'game_zh': '猜拳', 'result': '赢了' if won else '输了',
+        self.notify('digest', {'gid': gid, 'game': 'rps', 'game_name': '猜拳', 'game_zh': '猜拳', 'as': '小圆子', 'result': 'win' if won else 'lose',
                                'facts': f'和阿鲸猜拳三局两胜，{wins[0]}:{wins[1]}，{"小圆子赢了" if won else "阿鲸赢了"}。',
                                'points_delta': 2 if won else -1})
         return result
@@ -217,7 +217,7 @@ class Town:
             else:
                 outcome['default'] += 1                      # no line this time
         self.visits.append(outcome)
-        self.notify('visit', {'visit_id': vid, 'with_name': '阿鲸', 'place_zh': '你家', 'facts': '阿鲸来家里串门，聊了一会儿。',
+        self.notify('visit', {'visit_id': vid, 'state': 'done', 'with': {'fish_id': 'f_whale', 'name': '阿鲸'}, 'with_name': '阿鲸', 'place_name': '你家', 'place_zh': '你家', 'summary': '阿鲸来家里串门，聊了码头的风和斗地主。', 'facts': '阿鲸来家里串门，聊了一会儿。',
                               'dialogue': dialogue})
         return outcome
 

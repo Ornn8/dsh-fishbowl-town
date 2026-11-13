@@ -74,7 +74,7 @@ test('slow town does not hold the chat longer than the cold wait', async () => {
 test('0.2.10: the owner-chat note is labelled as plugin background, carries news facts, and asks for no format', () => {
   const b = renderBlock(null, { nowMs: NOW, herName: '小圆子', news: ['一次串门：阿鲸来家里串门，聊了一会儿。'], asks: ['小镇在问主人：同不同意你和小满在一起'] })
   assert.match(b, /^【鱼缸小镇插件 · 背景备注】这是插件附上的资料，不是主人说的话/)
-  assert.match(b, /- 最近：一次串门/)
+  assert.match(b, /你今天在小镇：\n- 一次串门/)
   assert.match(b, /小镇在问主人/)
   assert.doesNotMatch(b, /JSON|json|格式|括号|一两句|字以内/)
 })
