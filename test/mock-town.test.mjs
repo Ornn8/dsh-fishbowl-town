@@ -382,10 +382,12 @@ test('her chat with him is found by itself, gets the town news, and her town cho
     await post('/mock/visit', { lines: 2 })
     await waitFor(async () => (await report()).visits.length === 1, 60_000)
     assert.match(seen.find((x) => x.title === '鱼缸小镇 · 串门').last, /【你和主人最近的事】/)
-    // town news land in her chat with him; her reply about the town is not "their life"
+    // 0.2.10: town news go to 「见闻」 only — never a turn in her chat with him (it bent her everyday replies)
+    const before = host.sessions.get(chat.sid).messages.length
     await post('/mock/game', { rounds: 2 })
-    await waitFor(() => host.sessions.get(chat.sid).messages.some((m) => m.role === 'user' && /鱼缸小镇/.test(m.text)), 60_000)
+    await waitFor(() => [...host.sessions.values()].some((s) => s.title === '鱼缸小镇 · 见闻' && s.messages.some((m) => m.role === 'user' && /鱼缸小镇/.test(m.text))), 60_000)
     await sleep(300)
+    assert.equal(host.sessions.get(chat.sid).messages.length, before, 'nothing was posted into her chat with him')
     st = await state()
     assert.ok(st.ownerLife.every((l) => !/猜拳赢啦/.test(l)), 'her answer to town news is not mixed into their life')
     // he switches it off
@@ -457,4 +459,29 @@ test('decision turns list every action the town offers', () => {
   const turn = { turn_id: 'ot_x', kind: 'agency', packet: { actions: ['pier', 'arcade', 'club_join', 'challenge', 'none'], messages: [], reply: { format: 'json', hint: '{}' } } }
   const text = buildTurnPrompt(turn, {})
   for (const zh of ['去码头', '去电玩城', '加入俱乐部', '向谁发起挑战', '什么都不做']) assert.ok(text.includes(zh), zh)
+})
+
+// 0.2.10: users found her everyday replies turning into JSON / bracket actions. DSH's 「新会话」 adopts a blank session of the
+// last-used workspace — the plugin's own room — so owners chatted inside her 牌桌/串门 session and town turns landed in their chat.
+test('a town session the owner types in is given to him: town turns move to a new session, none land in his chat', { timeout: 120_000 }, async () => {
+  await post('/mock/reset')
+  const host = await startPlugin(scriptedModel({}))
+  try {
+    await post('/mock/game', { rounds: 1 })
+    await waitFor(async () => (await report()).games.length === 1)
+    const table = [...host.sessions.entries()].find(([, s]) => s.title === '鱼缸小镇 · 牌桌')
+    assert.ok(table, 'the plugin made its 牌桌 session')
+    const [sid, s] = table
+    // he types into it (as if DSH's 新会话 had put him there)
+    s.agent.followup({ id: 'owner-1', role: 'user', content: [{ type: 'text', text: '在吗，今天好累' }], source: { kind: 'user' } })
+    await waitFor(() => s.messages.length >= 4 && s.agent.status === 'idle')
+    const mine = s.messages.length
+    await post('/mock/game', { rounds: 2 })
+    await waitFor(async () => (await report()).games.length === 2)
+    assert.equal(s.messages.length, mine, 'no town turn went into the session he chats in')
+    const tables = [...host.sessions.entries()].filter(([id, x]) => x.title === '鱼缸小镇 · 牌桌' && id !== sid)
+    assert.ok(tables.length >= 1, 'the game went to a new 牌桌 session')
+  } finally {
+    await host.dispose()
+  }
 })
