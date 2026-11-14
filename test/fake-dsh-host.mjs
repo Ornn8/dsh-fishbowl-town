@@ -4,7 +4,10 @@
 // webServer + connection follow dsh-client-connection: requestRejection() answers 401 | 403 | undefined.
 import { EventEmitter } from 'node:events'
 
-export function createFakeHost({ model, latencyMs = 50 } = {}) {
+// 0.5.2: sessions also carry what the plugin's session guard reads in real DSH: session.header {id, cwd, agentPreset},
+// session.seq + session.eventAt(seq) over the event log (user/message with its source, assistant/message with usage).
+// The model may answer a string or { text, usage }. `hijack(request)` makes create() hand back another session id (a broken host).
+export function createFakeHost({ model, latencyMs = 50, hijack = null } = {}) {
   const listeners = new Map()
   const disposers = []
   const variables = new Map()
@@ -21,13 +24,32 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
     for (const fn of listeners.get(name) || []) fn(...args)
   }
 
+  function makeSession(sid, s) {
+    s.log = s.log || []
+    return {
+      id: sid,
+      get header() { return { id: sid, cwd: s.cwd, agentPreset: s.preset, isSeeded: Boolean(s.seeded) } },
+      get seq() { return s.log.length },
+      eventAt(i) { return s.log[i] },
+    }
+  }
+
+  /** Something lands in a session without the plugin seeing a live event (typed while the plugin was off, or old history). */
+  function seed(sid, events) {
+    const s = sessions.get(sid)
+    for (const e of events) {
+      if (e.role === 'user') { s.messages.push({ role: 'user', text: e.text }); s.log.push({ type: 'user/message', data: { id: 'seed-' + (++seq), role: 'user', content: [{ type: 'text', text: e.text }], source: e.source || { kind: 'user' } } }) }
+      else { s.messages.push({ role: 'assistant', text: e.text }); s.log.push({ type: 'assistant/message', data: { message: { role: 'assistant', content: [{ type: 'text', text: e.text }] }, ...(e.usage ? { usage: e.usage } : {}) } }) }
+    }
+  }
+
   function makeAgent(sid) {
     const s = sessions.get(sid)
     let turn = 0
     const queue = []
     const agent = {
       id: sid,
-      session: { id: sid },
+      session: makeSession(sid, s),
       status: 'idle',
       denied: [], // tools masked for this agent (agent.ctx.tools.restrict)
       // like DSH 0.2.1: restrict() throws on a name that is not a registered global tool (0.3.1 shipped a stale name and the mask failed)
@@ -50,20 +72,26 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
         turn++
         const myTurn = turn
         s.messages.push({ role: 'user', text: message.content.map((b) => b.text).join('') })
+        s.log.push({ type: 'user/message', data: message })
         emit('session/event', agent.session, { type: 'user/message', data: message }) // DSH 0.2.1 shape: the event data is the message itself
         const system = renderSystem(s.preset)
         let text
+        let usage = null
         try {
           text = await model({ system, history: s.messages.slice(), sessionId: sid, title: s.title, agent })
         } catch (error) {
           text = ''
         }
+        if (text && typeof text === 'object') { usage = text.usage || null; text = text.text || '' }
+        s.requests = (s.requests || 0) + 1
         await new Promise((r) => setTimeout(r, latencyMs))
         if (agent.cancelled) {
           emit('session/event', agent.session, { type: 'turn/end', data: { turn: myTurn, reason: { kind: 'cancelled' } } })
         } else {
           s.messages.push({ role: 'assistant', text })
-          emit('session/event', agent.session, { type: 'assistant/message', data: { turn: myTurn, message: { role: 'assistant', content: [{ type: 'text', text }] } } })
+          const data = { turn: myTurn, message: { role: 'assistant', content: [{ type: 'text', text }] }, ...(usage ? { usage } : {}) }
+          s.log.push({ type: 'assistant/message', data })
+          emit('session/event', agent.session, { type: 'assistant/message', data })
           emit('session/event', agent.session, { type: 'turn/end', data: { turn: myTurn, reason: { kind: 'completed' } } })
         }
         agent.status = 'idle'
@@ -121,9 +149,13 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
       },
     },
     sessionController: {
-      async create({ workspaceId, agentPreset }) {
+      async create(request) {
+        const { workspaceId, agentPreset } = request
+        const other = hijack ? hijack(request) : null
+        if (other && sessions.has(other)) return { sessionId: other, agentPreset }
         const sid = 'session-' + (++seq) + '-' + Math.random().toString(16).slice(2, 10)
-        sessions.set(sid, { title: '', preset: agentPreset, workspaceId, messages: [] })
+        const ws = workspaces.find((w) => w.id === workspaceId)
+        sessions.set(sid, { title: '', preset: agentPreset, workspaceId, cwd: ws ? ws.path : 'C:/Users/owner/workspace', messages: [] })
         sessions.get(sid).agent = makeAgent(sid)
         return { sessionId: sid, agentPreset }
       },
@@ -180,7 +212,7 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
   /** The owner's own chat with her (an ordinary session, default preset): say() types a line and waits for her reply. */
   async function ownerChat(title) {
     const sid = 'session-owner-' + (++seq) + '-' + Math.random().toString(16).slice(2, 10)
-    sessions.set(sid, { title, preset: 'default', workspaceId: 'ws-owner', messages: [] })
+    sessions.set(sid, { title, preset: 'default', workspaceId: 'ws-owner', cwd: 'C:/Users/owner/workspace', messages: [] })
     sessions.get(sid).agent = makeAgent(sid)
     return {
       sid,
@@ -199,6 +231,7 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
     sessions,
     fence,
     ownerChat,
+    seed,
     tools,
     callTool,
     runCommand,
