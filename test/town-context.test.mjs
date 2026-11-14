@@ -19,8 +19,18 @@ test('block is a few lines with the real line, the appointment time and the guid
   assert.match(b, /小满说：「好久没见泡泡了，有点想她」/)
   assert.match(b, /喜欢小满/)
   assert.match(b, /愧疚/)
-  assert.match(b, /花钱/)
+  assert.match(b, /不提钱/)
   assert.ok(b.split('\n').length <= 7)
+})
+
+test('0.6.4: the close is one positive line for the moment he comes back plus the floor; the town\'s long guidance and 「不提也没关系」 are gone', () => {
+  const b = renderBlock({ ...BONDS, guidance: '这些是她在镇上真实的关系和约定，她可以用自己的话跟主人提起。' }, { nowMs: NOW })
+  const tail = b.split('\n').slice(-2)
+  assert.equal(tail[0], '他刚回来、问你在干嘛或今天怎么样的这一下，可以顺口说一件；他在说自己的事，就先听他的，留着不说；说过就算了。')
+  assert.equal(tail[1], '不催他来小镇、不让他愧疚、不提钱（他问起花销除外）。')
+  assert.doesNotMatch(b, /可以用自己的话跟主人提起|不提也没关系/)
+  const spent = renderBlock({ spent_recent: { text: '近24小时在镇上花了¥0.04：分饭搭子 · 座位费（2笔） ¥0.04。', guidance: '主人问起钱时照实说清楚；他没问就不用提。' } }, { nowMs: NOW })
+  assert.match(spent.split('\n').at(-1), /^主人问起钱时照实说清楚；他没问就不用提。他问「花了啥」「花了多少」就是在问钱。$/)
 })
 
 test('0.6.2: the appointment time is worked out from due when shown (a cached 「明天」 from yesterday is not trusted)', () => {
