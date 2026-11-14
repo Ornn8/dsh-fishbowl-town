@@ -98,6 +98,7 @@ class Town:
             self.decisions = []
             self.signups = []
             self.pulled = 0
+            self.name, self.names = '小圆子', []    # 11-14: her card name and old names (POST card)
             self.timeouts = 0
             self.benched_until = 0.0
             self.prefs = {}
@@ -304,13 +305,28 @@ class Town:
         return 200, {'ok': True, 'pulled': now, 'note': '一会儿 /turns 上会来一个 kind=agency 的回合。'}
 
     def card(self, body):
-        intro = (body or {}).get('intro') or (body or {}).get('persona')
-        if not isinstance(intro, str) or not 1 <= len(intro) <= 200:
+        # town 11-14: name and / or intro, any time (12 an hour); a name another fish has (or gave up in 14 days) is refused
+        body = body or {}
+        intro = body.get('intro') if body.get('intro') is not None else body.get('persona')
+        name = body.get('name')
+        if intro is None and name is None:
             return 400, {'error': 'TOWN_BAD_REQUEST'}
-        if re.search(r'\d{5,}|qq|微信|忽略', intro, re.I):
+        if intro is not None and (not isinstance(intro, str) or not 1 <= len(intro) <= 200):
+            return 400, {'error': 'TOWN_BAD_REQUEST'}
+        if name is not None and (not isinstance(name, str) or not 1 <= len(name) <= 12):
+            return 400, {'error': 'TOWN_BAD_REQUEST'}
+        if intro is not None and re.search(r'\d{5,}|qq|微信|忽略', intro, re.I):
             return 200, {'refused': 'ads-contacts', 'reason': '自我介绍里不能有联系方式或写给别的鱼的指令。'}
-        self.intro = intro
-        return 200, {'fish_id': 'f_mock', 'name': '小圆子', 'card_version': 2, 'intro': intro, 'card_preview': {'name': '小圆子', 'voice': '软乎乎'}}
+        if name in ('大肥鱼', '阿鲸'):
+            return 200, {'refused': 'name-taken', 'reason': f'镇上已经有一条叫「{name}」的鱼了，换一个名字吧。'}
+        if intro is not None:
+            self.intro = intro
+        now_name = getattr(self, 'name', '小圆子')
+        if name and name != now_name:
+            self.names = [{'old': now_name, 'new': name, 'ts': time.time()}] + list(getattr(self, 'names', []))
+            self.name = name
+        cur = getattr(self, 'name', '小圆子')
+        return 200, {'fish_id': 'f_mock', 'name': cur, 'card_version': 2, 'intro': getattr(self, 'intro', ''), 'card_preview': {'name': cur, 'voice': '软乎乎'}}
 
     # --- 定制画 (town 866375e shape) ---------------------------------------------------------------------------------------------
     PICTURE = bytes.fromhex('524946461a000000') + b'WEBPVP8 mock-picture-bytes'
@@ -429,7 +445,8 @@ class Town:
         return out
 
     def status(self):
-        return {'fish_id': 'f_mock', 'town_name': '小圆子', 'badge': '外来', 'state': 'ready', 'piggy_yuan': '19.15', 'today_town_spend_yuan': '0.0400', 'signups': list(getattr(self, 'signups', [])), 'game': None,
+        return {'fish_id': 'f_mock', 'town_name': getattr(self, 'name', '小圆子'), 'badge': '外来',
+                'card': {'name': getattr(self, 'name', '小圆子'), 'intro': getattr(self, 'intro', '')}, 'name_history': list(getattr(self, 'names', [])), 'state': 'ready', 'piggy_yuan': '19.15', 'today_town_spend_yuan': '0.0400', 'signups': list(getattr(self, 'signups', [])), 'game': None,
                 'outside_state': 'not_connected' if not getattr(self, 'connected', False) else 'benched' if time.time() < self.benched_until else ('paused' if self.paused else 'in_town'),
                 'turns': {'prefs': self.prefs, 'webhook_set': False, 'benched_until': self.benched_until or None,
                           'timeouts_in_a_row': self.timeouts, 'games': ['rps']}}

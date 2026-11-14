@@ -63,6 +63,49 @@ async function waitFor(fn, ms = 60_000) {
 const state = (host) => host.http('/fishbowl-town/state').then((r) => r.json)
 const cmd = (host, text) => host.runCommand('town', text)
 
+test('0.5.0: the owner changes her card any time (/town card and the page); a taken name is refused with the reason', { timeout: 120_000 }, async () => {
+  await post('/mock/reset')
+  const host = await startPlugin(model())
+  try {
+    await waitFor(async () => (await state(host)).running, 30_000)
+    let r = await cmd(host, 'card')
+    assert.equal(r.kind, 'success')
+    assert.match(r.text, /她的名片/)
+    assert.match(r.text, /\/town card name/)
+    r = await cmd(host, 'card name 大肥鱼')
+    assert.equal(r.kind, 'error')
+    assert.match(r.text, /小镇没收：镇上已经有一条叫「大肥鱼」的鱼了/)
+    r = await cmd(host, 'card name 小团子')
+    assert.equal(r.kind, 'success', r.text)
+    assert.match(r.text, /她现在叫「小团子」（以前叫「小圆子」）/)
+    r = await cmd(host, 'card intro 加我qq 123456789')
+    assert.equal(r.kind, 'error')
+    assert.match(r.text, /小镇没收/)
+    r = await cmd(host, 'card 小汤圆 | 爱吃海藻面，打牌输了会嘴硬。')
+    assert.equal(r.kind, 'success', r.text)
+    const s = await state(host)
+    assert.equal(s.her.name, '小汤圆')
+    assert.equal(s.intro, '爱吃海藻面，打牌输了会嘴硬。')
+    // the page: name and intro, the same review
+    let p = (await host.http('/fishbowl-town/card', { method: 'POST', body: { name: '阿鲸' } })).json
+    assert.equal(p.ok, false)
+    assert.equal(p.refused, 'name-taken')
+    p = (await host.http('/fishbowl-town/card', { method: 'POST', body: { name: '小月饼', intro: '住在主人电脑里的胖头鱼。' } })).json
+    assert.equal(p.ok, true, JSON.stringify(p))
+    assert.equal(p.name, '小月饼')
+    assert.equal(p.was, '小汤圆')
+    assert.equal((await host.http('/fishbowl-town/card', { method: 'POST', body: {} })).status, 400)
+    assert.equal((await host.http('/fishbowl-town/card', { method: 'POST', body: { name: '一二三四五六七八九十甲乙丙' } })).status, 400)
+    // the old /intro route still works (older pages)
+    p = (await host.http('/fishbowl-town/intro', { method: 'POST', body: { intro: '换一段介绍。' } })).json
+    assert.equal(p.ok, true)
+    const help = (await cmd(host, 'help')).text
+    assert.match(help, /\/town card/)
+  } finally {
+    await host.dispose()
+  }
+})
+
 test('an OLD town: nothing new shows, nothing errors, nothing is spent; the decision turn is untouched', { timeout: 120_000 }, async () => {
   await post('/mock/reset')
   const host = await startPlugin(model())

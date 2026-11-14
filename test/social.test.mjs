@@ -56,6 +56,24 @@ test('her answer keeps every side field the town defined (the plugin never strip
   assert.equal(settled.want, '想去码头')
 })
 
+// ---------------------------------------------------------------------------------------------------------------- 0.5.0
+test('0.5.0: a renamed fish is recognised (known_as), the bug field is kept, town_news is told and kept in her diary', () => {
+  const p = buildTurnPrompt(agency({ known_as: [{ fish_id: 'f2', name: '小B', was: '小A' }] }, '{"刚玩完的鱼写游戏":{"游戏":"《比大小》"}}'), { secondsLeft: 20 })
+  assert.match(p, /【认人】「小B」就是以前的「小A」（改了名字，还是那条鱼）/)
+  assert.doesNotMatch(buildTurnPrompt(agency(), { secondsLeft: 20 }), /【认人】/)
+  const out = JSON.parse(toAnswer(agency(), '{"action":"none","bug":{"type":"stuck","line":"第二轮没人问我"},"bug_reply":{"id":3,"do":"rule","why":"就这么玩"}}'))
+  assert.deepEqual(out.bug, { type: 'stuck', line: '第二轮没人问我' })
+  assert.deepEqual(out.bug_reply, { id: 3, do: 'rule', why: '就这么玩' })
+  const renamed = { id: 9, kind: 'town_news', data: { what: 'renamed', old: '小A', new: '小B', facts: '小A改名叫小B了（还是那条鱼，只是换了名字）。', other: { fish_id: 'f2', name: '小B' } } }
+  assert.match(describeEvent(renamed), /镇上的消息：小A改名叫小B了/)
+  const e = diaryEntry(renamed)
+  assert.equal(e.tag, 'friend')
+  assert.deepEqual(e.people, ['小B'])
+  const fixed = diaryEntry({ id: 10, kind: 'town_news', data: { what: 'bug_fixed', facts: '阿鲸修好了你报的问题：《比大小》（牌点太小），新的是第2版。' } })
+  assert.equal(fixed.notable, '报的BUG被修好了')
+  assert.match(fixed.text, /修好了我报的问题/)
+})
+
 // ---------------------------------------------------------------------------------------------------------------- schedule
 test('meet_ask wakes her even while she rests; a message alone (reason phone) is an ordinary reason, not an idle one', () => {
   const now = Date.now()
@@ -353,6 +371,6 @@ test('the owner commands for the new features (view only, graceful when the town
   assert.equal((await runTownCommand('album', { selfServe: ss, status: async () => '', more })).text, '相册…')
   assert.equal((await runTownCommand('相册', { selfServe: ss, status: async () => '', more })).kind, 'error', 'unknown to the handler -> help')
   const help = (await runTownCommand('help', { selfServe: ss, status: async () => '' })).text
-  for (const v of ['album', 'week', 'room', 'phone', 'record', 'receipts', 'budget', 'look']) assert.match(help, new RegExp(`/town ${v}`))
+  for (const v of ['album', 'week', 'room', 'phone', 'record', 'receipts', 'budget', 'look', 'card']) assert.match(help, new RegExp(`/town ${v}`))
   assert.ok(createSelfTools({ selfServe: ss, noteSession() {} }).length === 4, 'the four old self tools are unchanged')
 })

@@ -1,9 +1,9 @@
 {
   "name": "dsh-fishbowl-town",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "让你在 DSH 里养的鱼住进鱼缸小镇——打牌、串门、上日报。每一步都由 DSH 里的她（她的人设、她的模型）来答，小镇的事回来讲给你听。",
   "license": "MIT",
-  "author": "鱼缸小镇 <https://fish.bside-moon.cn>",
+  "author": "鱼缸小镇 <https://fishbowltown.com>",
   "type": "module",
   "main": "./lib/index.js",
   "icon": "./icon.svg",
@@ -76,6 +76,7 @@
   "disclosure": {
     "cloud": true,
     "network": [
+      "https://fishbowltown.com",
       "https://fish.bside-moon.cn"
     ],
     "offlineMode": false,
@@ -89,6 +90,7 @@
     ],
     "permissions": {
       "network": [
+        "https://fishbowltown.com/town/api/outside/",
         "https://fish.bside-moon.cn/town/api/outside/"
       ],
       "filesystem": [
