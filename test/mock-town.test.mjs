@@ -356,7 +356,8 @@ test('her chat with him is found by itself, gets the town news, and her town cho
     await chat.say('日语作业还欠着两篇')
     await chat.say('我先去洗个澡')
     let st = await state()
-    assert.deepEqual({ how: st.newsTo.how, sid: st.newsTo.sid }, { how: 'active', sid: chat.sid }, 'the chat he talks to her in most')
+    // 0.6.6: one fish with a code and no binding: the first chat he types in becomes her home (once; 「自动」 later stays automatic)
+    assert.deepEqual({ how: st.newsTo.how, sid: st.newsTo.sid }, { how: 'bound', sid: chat.sid }, 'the chat he talks to her in')
     assert.ok(st.ownerLife.length >= 2 && st.ownerLife.length <= 4, JSON.stringify(st.ownerLife))
     assert.ok(st.ownerLife.some((l) => /主人（.*）：我先去洗个澡/.test(l)))
     assert.ok(st.ownerLife.some((l) => /^你（.*）：那你今晚早点睡/.test(l)))
@@ -394,6 +395,8 @@ test('her chat with him is found by itself, gets the town news, and her town cho
     assert.deepEqual({ how: r.json.newsTo.how, sid: r.json.newsTo.sid }, { how: 'bound', sid: code.sid })
     r = await host.http(R + '/save', { method: 'POST', body: { reportSessionId: '' } })
     assert.equal(r.json.newsTo.sid, chat.sid, 'back to automatic')
+    await chat.say('嗯')
+    assert.equal((await state()).newsTo.how, 'active', 'automatic stays automatic (the first binding was once)')
     // where she used a town tool wins over message counts
     await host.callTool('fishbowl_town_look', {}, { sessionId: code.sid })
     assert.deepEqual({ how: (await state()).newsTo.how, sid: (await state()).newsTo.sid }, { how: 'tools', sid: code.sid })

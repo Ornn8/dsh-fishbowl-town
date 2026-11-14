@@ -168,3 +168,37 @@ test('one fish (the old way): nothing changes — no name in titles, no persona 
     await host.dispose()
   }
 })
+
+test('0.6.6: the setup tool makes the chat it is called in her home, with the code and her persona; one fish binds the chat he types in', { timeout: 120_000 }, async () => {
+  const [A] = towns
+  await A.post('/mock/reset')
+  process.env.DSH_HOME = join(WORK, 'home-' + Math.random().toString(16).slice(2, 8))
+  const host = createFakeHost({ model: async () => JSON.stringify({ action: 'rest', mind: '歇会儿' }) })
+  const chat = await host.ownerChat('和她聊天')
+  const plugin = await import('../lib/index.js?' + Math.random())
+  plugin.apply(host.ctx, { base: A.api, eventsEverySeconds: 15 })
+  try {
+    // installed by DSH itself, nothing set yet: the tool in his chat sets the code, binds the chat and writes her persona
+    const bad = await host.callTool(plugin.SETUP_TOOL, { code: 'abc' }, { sessionId: chat.sid })
+    assert.match(bad, /fbo_/)
+    const out = await host.callTool(plugin.SETUP_TOOL, { code: A.code, persona: '我是小圆子，一条话不多但很护短的金鱼，跟主人说话爱用「嘛」。' }, { sessionId: chat.sid })
+    assert.match(out, /这个会话已经是你在小镇的家了.*接入码填好了.*人设写好了/)
+    assert.match(out, /都设置好了/)
+    let s = (await host.http('/fishbowl-town/state')).json
+    assert.equal(s.fish[0].chatSid, chat.sid)
+    assert.equal(s.persona.startsWith('我是小圆子'), true)
+    // a town session is never her home
+    const town = [...host.sessions.entries()].find(([, v]) => String(v.title || '').startsWith('鱼缸小镇'))
+    if (town) assert.match(await host.callTool(plugin.SETUP_TOOL, {}, { sessionId: town[0] }), /小镇自己的会话/)
+    // one fish, code set, not bound: the chat he types in becomes her home
+    await host.http('/fishbowl-town/save', { method: 'POST', body: { reportSessionId: '' } })
+    s = (await host.http('/fishbowl-town/state')).json
+    assert.equal(s.fish[0].chatSid, '')
+    const other = await host.ownerChat('另一个会话')
+    await other.say('在吗')
+    s = (await host.http('/fishbowl-town/state')).json
+    assert.equal(s.fish[0].chatSid, other.sid)
+  } finally {
+    await host.dispose()
+  }
+})
