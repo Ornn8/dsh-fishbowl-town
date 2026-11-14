@@ -53,6 +53,14 @@ test('settings: old single-code configs are fish 1; ids, max 3, the env code onl
   assert.equal(nextFishId([{ id: '1' }, { id: '3' }]), '2')
 })
 
+test('0.6.5: a hand-written settings.json without ids keeps every fish (numbered in order, name ignored)', () => {
+  const noIds = fishEntries({ fish: [{ name: '金鱼', code: 'fbo_a' }, { name: '小鲸', code: 'fbo_b' }] }, {}, {})
+  assert.deepEqual(noIds.map((x) => [x.id, x.code]), [['1', 'fbo_a'], ['2', 'fbo_b']])
+  const mixed = fishEntries({ fish: [{ code: 'fbo_x' }, { id: '1', code: 'fbo_a' }] }, {}, {})
+  assert.deepEqual(mixed.map((x) => [x.id, x.code]), [['2', 'fbo_x'], ['1', 'fbo_a']]) // a written id keeps its number
+  assert.equal(nextFishId(noIds), '3')
+})
+
 test('two fish in one DSH: own codes, own sessions, own persona, tools and /town follow the session; the page adds and removes fish', { timeout: 180_000 }, async () => {
   const [A, B] = towns
   await A.post('/mock/reset')

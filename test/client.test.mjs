@@ -37,6 +37,17 @@ test('the page module loads, registers its slot, and the first render (nothing r
   assert.ok(mod.__test.Page(), 'Page renders with no data')
 })
 
+test('0.6.5: the page knows its own version and says so when DSH still runs an older plugin (installed, not restarted)', () => {
+  const { mod } = load()
+  const { stale, CLIENT_VERSION } = mod.__test
+  assert.equal(CLIENT_VERSION, JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version, 'bump CLIENT_VERSION with package.json')
+  assert.equal(stale({ ok: true, version: CLIENT_VERSION }), '')
+  assert.match(stale({ ok: true, codeTail: '4f7A' }), /DSH 里跑的还是旧版：重启 DSH 后才生效/)          // 0.6.0 and before: no version at all
+  assert.match(stale({ ok: true, version: '0.6.4' }), /跑的还是 0\.6\.4/)
+  assert.equal(stale({ ok: false, status: 0 }), '')                                               // unreachable is its own message
+  assert.equal(stale(null), '')
+})
+
 test('Section: an old town (feature not true) leaves no trace; a new one is a collapsible block', () => {
   const { mod } = load()
   const S = mod.__test.Section
