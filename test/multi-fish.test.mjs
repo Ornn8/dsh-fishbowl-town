@@ -202,3 +202,22 @@ test('0.6.6: the setup tool makes the chat it is called in her home, with the co
     await host.dispose()
   }
 })
+
+test('0.6.7: the backend reads the newest version from the mirror and tells the page; older or equal is nothing', { timeout: 60_000 }, async () => {
+  const plugin = await import('../lib/index.js?' + Math.random())
+  assert.ok(plugin.newerThan('0.6.10', '0.6.9') && !plugin.newerThan('0.6.7', '0.6.7') && plugin.newerThan('1.0', '0.9.9') && !plugin.newerThan('x', '0.1'))
+  const ok = (body) => async () => ({ ok: true, json: async () => body })
+  assert.equal((await plugin.fetchLatest(async () => ({ ok: false }), ['a', 'b'])), null)
+  const got = await plugin.fetchLatest(ok({ version: '0.7.0', url: 'http://bad', notes: 'x'.repeat(300) }), ['a'])
+  assert.equal(got.version, '0.7.0') && assert.ok(got.url.startsWith('https://fishbowltown.com/')) && assert.equal(got.notes.length, 120)
+  process.env.DSH_HOME = join(WORK, 'home-' + Math.random().toString(16).slice(2, 8))
+  const host = createFakeHost({ model: async () => JSON.stringify({ action: 'rest' }) })
+  plugin.apply(host.ctx, { base: towns[0].api, checkLatest: true, fetchLatest: ok({ version: '99.0.0', url: 'https://fishbowltown.com/dsh/pkg/dsh-fishbowl-town-latest.tgz' }) })
+  try {
+    await waitFor(async () => (await host.http('/fishbowl-town/state')).json.latest)
+    const s = (await host.http('/fishbowl-town/state')).json
+    assert.equal(s.latest.version, '99.0.0')
+  } finally {
+    await host.dispose()
+  }
+})

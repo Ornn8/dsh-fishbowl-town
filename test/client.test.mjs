@@ -148,3 +148,12 @@ test('0.6.2: 「你不在这几天」 shows when the town has it (her lines, how
   React.useState = () => [null, () => {}]
   assert.equal(mod.__test.AwayCard(), null)
 })
+
+test('0.6.7: a newer plugin on the mirror is shown on top of the page, with how to update', () => {
+  const { mod } = load()
+  const { newer } = mod.__test
+  assert.equal(newer({ ok: true, version: '0.6.7' }), '')
+  const text = newer({ ok: true, version: '0.6.7', latest: { version: '0.6.8', url: 'https://fishbowltown.com/dsh/pkg/dsh-fishbowl-town-latest.tgz', notes: '更快' } })
+  assert.match(text, /有新版本 0\.6\.8（你装的是 0\.6\.7）/)
+  assert.match(text, /添加插件.*dsh-fishbowl-town-latest\.tgz.*重启一次 DSH.*这一版：更快/)
+})
