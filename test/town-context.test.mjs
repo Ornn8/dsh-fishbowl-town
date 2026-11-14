@@ -57,6 +57,47 @@ test('owner chat gets the block once; unchanged content is not repeated; other s
   assert.equal(calls, 2)
 })
 
+test('0.6.1: the note comes once when the owner comes back; news while he keeps chatting waits for the next return', async () => {
+  let t = NOW
+  let news = ['打了 1 局（斗地主），赢 1 输 0']
+  const { run } = hostWith({ now: () => t, fetchBonds: async () => BONDS, extras: () => ({ news }), isOwnerChat: () => true })
+  assert.equal((await run('main')).messages.length, 2) // first time (plugin just started = a return)
+  for (let i = 0; i < 6; i++) { // chatting every 40 min for 4 hours, the town moving all the time
+    t += 40 * 60_000
+    news = [`打了 ${i + 2} 局（斗地主），赢 ${i + 2} 输 0`]
+    assert.equal((await run('main')).messages.length, 1)
+  }
+  t += 3 * 3600_000 // he goes away for 3 hours and comes back
+  news = ['打了 9 局（斗地主），赢 9 输 0']
+  const back = await run('main')
+  assert.equal(back.messages.length, 2)
+  assert.match(back.messages[1].content[0].text, /打了 9 局/)
+  t += 60_000
+  assert.equal((await run('main')).messages.length, 1)
+})
+
+test('0.6.1: a new question the town is waiting on gets through between returns, 20 min after the last note', async () => {
+  let t = NOW
+  let asks = []
+  const { run } = hostWith({ now: () => t, fetchBonds: async () => BONDS, extras: () => ({ asks }), isOwnerChat: () => true })
+  assert.equal((await run('main')).messages.length, 2)
+  t += 5 * 60_000
+  asks = ['小镇在问主人：同不同意你和小满在一起']
+  assert.equal((await run('main')).messages.length, 1) // too soon after the last note
+  t += 20 * 60_000
+  const d = await run('main')
+  assert.equal(d.messages.length, 2)
+  assert.match(d.messages[1].content[0].text, /小镇在问主人/)
+  t += 30 * 60_000
+  assert.equal((await run('main')).messages.length, 1) // same question, already carried
+})
+
+test('0.6.1: at most 3 lines of 你今天在小镇', () => {
+  const b = renderBlock(null, { nowMs: NOW, news: ['一', '二', '三', '四', '五'] })
+  assert.match(b, /你今天在小镇：\n- 一\n- 二\n- 三\n/)
+  assert.doesNotMatch(b, /- 四/)
+})
+
 test('town unreachable: no block, no throw', async () => {
   const { run } = hostWith({ now: () => NOW, fetchBonds: async () => { throw new Error('NETWORK') }, isOwnerChat: () => true })
   const d = await run('main')

@@ -35,6 +35,19 @@ test('the digest: games and results, people, moments, real lines, promises; 你 
   assert.match(owner, /她当地主/)
   assert.match(owner, /小满对她说/)
   assert.ok(d.digest({ maxChars: 120 }).join('\n').length <= 200)
+  // 0.6.1: the note to her is 3 lines — the two summaries and one real line; /town today (owner) keeps them all
+  assert.deepEqual(d.digest({ maxLines: 3 }), ['打了 2 局（海龟汤、斗地主），赢 1 输 1', '见了：豆豆、阿鲸', '小满对你说：「泡泡今天怎么没来」'])
+  assert.ok(d.digest({ voice: 'owner' }).length > 3)
+})
+
+test('0.6.1: three lines with no real line left fall back to the newest moment', () => {
+  const d = createDiary({ state: {} })
+  d.record(EVENTS[3])
+  d.record(EVENTS[1])
+  const lines = d.digest({ maxLines: 3 })
+  assert.equal(lines.length, 3)
+  assert.equal(lines[0], '见了：阿鲸、豆豆')
+  assert.match(lines[1], /码头/)
 })
 
 test('telling the owner: at most 3 a day, an hour apart', () => {
