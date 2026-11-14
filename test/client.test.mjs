@@ -32,7 +32,7 @@ test('the page module loads, registers its slot, and the first render (nothing r
   const reg = []
   mod.apply({ get: () => ({ inject: (_n, f) => f(), register: (meta, comp) => reg.push([meta, comp]) }) })
   assert.equal(reg.length, 1)
-  assert.equal(reg[0][1]({ view: 'summary' }), '填接入码、她的人设、消息交到哪')
+  assert.equal(reg[0][1]({ view: 'summary' }), '填接入码、她的人设、她住的聊天会话（一台 DSH 最多 3 条鱼）')
   assert.ok(reg[0][1]({ view: 'full' }))
   assert.ok(mod.__test.Page(), 'Page renders with no data')
 })
@@ -104,4 +104,22 @@ test('her week, room, phone and record read as plain lines', () => {
   assert.match(rec, /没成.*没说玩哪台机器/)
   assert.match(rec, /成了.*玩了投篮机.*花了 ¥0\.02/)
   assert.match(rec, /她留下的话/)
+})
+
+test('0.6.0 the fish bar: one fish shows a quiet 「再带一条鱼」; several show one chip each, which one is unbound, the add button up to 3, and 不带这条鱼了', () => {
+  const { mod } = load()
+  const F = mod.__test.FishBar
+  const one = F({ st: { fish: [{ id: '1', name: '泡泡', codeSet: true, chatSid: 's1' }], maxFish: 3 }, fishId: '', setFish: () => {} })
+  assert.match(text(one), /再带一条鱼/)
+  const two = F({ st: { fish: [{ id: '1', name: '泡泡', codeSet: true, chatSid: 's1' }, { id: '2', name: '', codeSet: false, chatSid: '' }], maxFish: 3 }, fishId: '2', setFish: () => {} })
+  const t = text(two)
+  assert.match(t, /这台 DSH 带去小镇的鱼（2\/3）/)
+  assert.match(t, /泡泡/)
+  assert.match(t, /第2条鱼（还没填接入码）（没绑定会话）/)
+  assert.match(t, /再带一条/)
+  assert.match(t, /下面是「第2条鱼（还没填接入码）」的设置/)
+  assert.match(t, /不带这条鱼了/)
+  const full = F({ st: { fish: [{ id: '1', name: 'a', chatSid: 'x' }, { id: '2', name: 'b', chatSid: 'y' }, { id: '3', name: 'c', chatSid: 'z' }], maxFish: 3 }, fishId: '1', setFish: () => {} })
+  assert.doesNotMatch(text(full), /再带一条/)
+  assert.ok(mod.__test.Root(), 'Root renders')
 })

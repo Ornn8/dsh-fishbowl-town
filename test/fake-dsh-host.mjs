@@ -194,10 +194,10 @@ export function createFakeHost({ model, latencyMs = 50, hijack = null } = {}) {
   }
 
   /** The owner types a slash command (e.g. runCommand('town', 'status')) -> the handler's result. */
-  async function runCommand(name, rawInput = '') {
+  async function runCommand(name, rawInput = '', { sessionId } = {}) {
     const def = commands.get(name)
     if (!def) throw new Error('no command ' + name)
-    return def.handler({ rawInput })
+    return def.handler({ rawInput, ...(sessionId ? { agent: sessions.get(sessionId)?.agent } : {}) })
   }
 
   /** The model calls one of the tools the plugin registered (in a chat session of the owner's). */
