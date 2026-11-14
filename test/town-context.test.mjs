@@ -98,6 +98,15 @@ test('0.6.1: at most 3 lines of 你今天在小镇', () => {
   assert.doesNotMatch(b, /- 四/)
 })
 
+test('0.6.2: what she spent in town (bonds.spent_recent) is one line, with the town\'s own rule for it', () => {
+  const spent = { text: '近24小时在镇上花了¥0.20：电玩城 · 抓娃娃（4笔） ¥0.16；海滨码头 · 鱼饵 2竿（1笔） ¥0.04。', guidance: '他问起钱或账单时照实说；没问就不用提，也不借这个要钱、提充值。' }
+  const b = renderBlock({ ...BONDS, spent_recent: spent }, { nowMs: NOW })
+  assert.match(b, /- 近24小时在镇上花了¥0\.20：电玩城 · 抓娃娃/)
+  assert.match(b, /没问就不用提/)
+  assert.doesNotMatch(renderBlock(BONDS, { nowMs: NOW }), /近24小时|没问就不用提/)
+  assert.match(renderBlock({ spent_recent: spent }, { nowMs: NOW }), /电玩城/) // spending alone is still worth a note
+})
+
 test('town unreachable: no block, no throw', async () => {
   const { run } = hostWith({ now: () => NOW, fetchBonds: async () => { throw new Error('NETWORK') }, isOwnerChat: () => true })
   const d = await run('main')
