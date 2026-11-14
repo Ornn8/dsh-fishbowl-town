@@ -16,6 +16,10 @@ retry_after 3 + Retry-After: 3, town 074da93) | drop (socket closed, no reply):
 POST /mock/activity {purpose?} (town 4f0af53: a kind=activity turn if her polls carry kinds=activity, else a 「代写」 + outside_ghost),
 POST /mock/heart {name?} (a heart_consent event), POST /mock/bless_done (bless_ready for the last bless request):
 a town restart as the outside API sees it.
+0.4.0 (town 43a669b receipts / spend social / social-media / phone, all default OFF = an old town: those routes answer 404):
+POST /mock/features {on: ["receipts","record","social","week","room","album","phone","look"]} switches the new routes on;
+POST /mock/media {kind} fires a media event (photo_done | song_for_you); POST /mock/phone_msg {text?, meet?} an incoming 小手机 message;
+POST /mock/agency {social: true} sends the decision turn with the 「社交」 block and the side fields in its hint. GET /mock/report has social_calls etc.
 Run: python -I mock_town.py --port 18930 --code-file <file holding a fbo_ test code>   (the code is never printed)
 """
 from __future__ import annotations
@@ -106,6 +110,11 @@ class Town:
             self.floors = None
             self.settings_calls = []
             self.agency_turns = 0
+            self.features = set()
+            self.social_cents = None
+            self.social_calls = []
+            self.looks = []
+            self.phone_sent = []
             self.lock.notify_all()
 
     # --- feed ----------------------------------------------------------------------------------------------------------------------------
@@ -235,11 +244,21 @@ class Town:
                      '\n你是从镇外来的鱼：action 只能是 none / signup / cancel / visit / join / leave 之一。'
                      '\n只输出JSON：{"action":"none|signup|cancel|visit|join|leave","game":"signup 时的游戏","target":"visit 时去找谁","place":"visit 时在哪","intent":"visit 时想做什么","note":"你的心思（一句话）","next_wake":15}')
 
-    def run_agency(self, reasons=None):
+    SOCIAL_SYSTEM = ('\n【社交】情况里的“社交”是你能为朋友花钱的事（价格已经是你的价格，单位元）。想做就在回答里加对应的字段：送礼 "gift":{"to":"她的fish_id","item":"礼物名"}；'
+                     '拍照点歌 "media":{"kind":"photo"}。存钱罐挺鼓的时候可以大方一点。绝不开口跟主人要钱。'
+                     '\n只输出JSON：{"action":"none|signup|cancel|visit|join|leave","gift":null,"media":null,"phone":null,"note":"你的心思（一句话）","next_wake":15}')
+
+    def run_agency(self, reasons=None, social=False):
         did = 'a_mock_' + secrets.token_hex(3)
-        user = ('【情况】' + json.dumps({'现在': time.strftime('%H:%M'), '存钱罐': '¥19.40', '开着的桌子': [{'game': 'ddz', 'name': '斗地主台', '差几个人': 1}],
-                                     '朋友': [{'name': '阿鲸', 'where': '码头', '在等你': True}], '今天的你': '还没玩过'}, ensure_ascii=False))
-        text = self.ask('agency', did, 'agency', 'agency', None, self.AGENCY_SYSTEM, user, max_tokens=170,
+        situ = {'现在': time.strftime('%H:%M'), '存钱罐': '¥19.40', '开着的桌子': [{'game': 'ddz', 'name': '斗地主台', '差几个人': 1}],
+                '朋友': [{'name': '阿鲸', 'where': '码头', '在等你': True}], '今天的你': '还没玩过'}
+        system = self.AGENCY_SYSTEM
+        if social:
+            situ['社交'] = {'存钱罐': '挺鼓的', '今天社交预算还剩': '0.38', '朋友那边': [{'fish_id': 'f1', '名字': '阿鲸', '事': '今天生日'}], '送礼': {'一束小花': '0.12'}}
+            situ['小手机'] = {'新消息': [{'from': '阿鲸', 'text': '晚上来码头吗'}]}
+            system = self.AGENCY_SYSTEM + self.SOCIAL_SYSTEM
+        user = ('【情况】' + json.dumps(situ, ensure_ascii=False))
+        text = self.ask('agency', did, 'agency', 'agency', None, system, user, max_tokens=170,
                         extra={'seat': None, 'actions': ['none', 'signup', 'cancel', 'visit', 'join', 'leave'], **({'reasons': reasons} if reasons else {})})
         obj = parse_json(text) if text is not None else None
         self.decisions = getattr(self, 'decisions', [])
@@ -437,7 +456,98 @@ class Town:
                     'events': len(self.events), 'unread': sum(1 for e in self.events if e['acked'] is None),
                     'open': len(self.open_turns()), 'benched': time.time() < self.benched_until,
                     'outage_hits': getattr(self, 'outage_hits', 0), 'activities': getattr(self, 'activities', []),
-                    'activity_ok': getattr(self, 'activity_ok', False), 'floors': getattr(self, 'floors', None), 'settings_calls': getattr(self, 'settings_calls', []), 'agency_turns': getattr(self, 'agency_turns', 0), 'blesses': getattr(self, 'blesses', 0), 'consents': getattr(self, 'consents', [])}
+                    'activity_ok': getattr(self, 'activity_ok', False), 'floors': getattr(self, 'floors', None), 'settings_calls': getattr(self, 'settings_calls', []), 'agency_turns': getattr(self, 'agency_turns', 0), 'blesses': getattr(self, 'blesses', 0), 'consents': getattr(self, 'consents', []), 'social_calls': self.social_calls, 'looks': self.looks, 'phone_sent': self.phone_sent, 'social_cents': self.social_cents, 'features': sorted(self.features)}
+
+
+NEW_GET = {'record': 'record', 'receipts': 'receipts', 'social': 'social', 'week': 'week', 'room': 'room', 'album': 'album', 'phone': 'phone'}
+NEW_POST = {'social': 'social', 'photo': 'album', 'song': 'album', 'paint_social': 'album', 'look': 'look', 'phone': 'phone'}
+
+
+def _mock_new_get(self, route, q):
+    now = time.time()
+    if route == 'record':
+        return {'as_of': now, 'fish_id': 'f_mock', 'name': '小圆子', 'line': '共 12 局，7 胜 4 负，胜率 64%（斗地主 8 局 5 胜；麻将 4 局 2 胜）',
+                'total': {'games': 12, 'wins': 7, 'losses': 4, 'draws': 1, 'win_rate': 0.636, 'points': 1240}, 'games': [],
+                'recent': [{'game_id': 'g_1', 'game': 'ddz', 'game_zh': '斗地主', 'venue_name': '老王牌桌', 'ended': now - 600, 'outcome': 'win', 'outcome_zh': '赢了', 'points': 40}],
+                'places': {'arcade': {'plays': 9, 'tokens': 4, 'plush': 2, 'best': {'hoops': {'zh': '投篮机', 'score': 60, 'unit': '分'}}}, 'pier': {'casts': 6, 'catches': 5, 'swims': 3}},
+                'social': {'friends': 3, 'visits_made': 4, 'visits_received': 2},
+                'recent_receipts': [{'ok': True, 'action': 'goto', 'state': 'done', 'code': 'OK', 'reason': '在电玩城玩了投篮机1次，最好成绩 38分；花了 ¥0.02。', 'spent_yuan': '0.02', 'piggy_yuan': '4.98', 'ts': now - 300}],
+                'notes': [], 'pending_wants': []}
+    if route == 'receipts':
+        return {'receipts': [{'ok': False, 'action': 'goto', 'state': 'refused', 'code': 'ARCADE_NO_MACHINE', 'reason': '去电玩城没说玩哪台机器。', 'piggy_yuan': '4.98', 'ts': now - 100, 'receipt_id': 2},
+                             {'ok': True, 'action': 'goto', 'state': 'done', 'code': 'OK', 'reason': '在电玩城玩了投篮机1次；花了 ¥0.02。', 'spent_yuan': '0.02', 'piggy_yuan': '4.98', 'ts': now - 300, 'receipt_id': 1}]}
+    if route == 'social':
+        left = 0.38
+        return {'请客': {}, '礼物': {'一束小花': '0.12'}, '礼物的理由': ['生日'], '心意': {}, '出游': {}, '组局': {}, '存钱罐': '挺鼓的',
+                '今天的社交预算': format((50 if self.social_cents is None else self.social_cents) / 100, '.2f'), '今天还能花': format(left, '.2f')}
+    if route == 'week':
+        return {'fish_id': 'f_mock', 'name': '小圆子', 'since': now - 7 * 86400, 'until': now, 'currency': 'CNY', 'album': [{'item_id': 'al_00000000000000a1'}],
+                'treats': [{'at': now - 3600, 'from': {'fish_id': 'f_mock', 'name': '小圆子'}, 'to': {'fish_id': 'f1', 'name': '阿鲸'}, 'where': 'cafe', 'item': '热可可两杯', 'mine': True, 'price_yuan': '0.16'}],
+                'gifts_in': [{'at': now - 7200, 'from': {'fish_id': 'f1', 'name': '阿鲸'}, 'item': '贝壳风铃', 'item_key': 'chime', 'occasion': '生日', 'words': '生日快乐'}],
+                'gifts_out': [], 'paper': {'notes': [{'at': now - 5000, 'kind': '祝福', 'size': '一行', 'to': {'name': '阿鲸'}, 'text': '阿鲸生日快乐', 'printed': True}], 'for_her': [], 'days_in_paper': [], 'times': 1},
+                'trips': [], 'parties': [], 'spent': {'total_yuan': '0.56', 'by_kind': [{'kind': 'treat', 'name': '请客', 'yuan': '0.16'}, {'kind': 'model', 'name': '模型调用', 'yuan': '0.40'}]}}
+    if route == 'room':
+        return {'on': True, 'count': 1, 'gifts': [{'gift_id': 'gf1', 'item': '贝壳风铃', 'item_key': 'chime', 'from': {'fish_id': 'f1', 'name': '阿鲸'}, 'occasion': '生日', 'words': '生日快乐', 'at': now - 7200}]}
+    if route == 'album':
+        def it(i, kind, what, extra=None):
+            return {'item_id': 'al_0000000000000%03x' % i, 'n': 0, 'role': 'photo', 'url': '/town/api/album/al_0000000000000%03x/file' % i, **({'thumb': '/town/api/album/al_0000000000000%03x/thumb' % i} if kind != 'song' else {}),
+                    'order_id': 'sm_%d' % i, 'kind': kind, 'what': what, 'occasion': '', 'with': [{'fish_id': 'f1', 'name': '阿鲸'}], 'paid_by': {'fish_id': 'f_mock', 'name': '小圆子'},
+                    'price_yuan': '0.25', 'state': 'done', 'created': now - i * 60, **(extra or {})}
+        return {'fish_id': 'f_mock', 'items': [it(0xa1, 'photo', '普通照（合影）'), it(0xa2, 'song', '小圆子点给阿鲸的歌《晴天》（周杰伦）', {'price_yuan': '0.50'}), it(0xa3, 'paint', '请「阿鲸画铺」画的一张画，送给主人')],
+                'making': [{'order_id': 'sm_9', 'kind': 'photo', 'what': '艺术照', 'state': 'making'}],
+                'given_back': [{'order_id': 'sm_8', 'kind': 'song', 'what': '点给阿鲸的歌《找不到》', 'state': 'refunded', 'reason': '没找到这首歌'}]}
+    if route == 'phone':
+        return {'on': True, 'threads': [{'thread_id': 'dm:a:b', 'kind': 'dm', 'title': '', 'with': [{'fish_id': 'f1', 'name': '阿鲸'}], 'unread': 1,
+                                         'messages': [{'msg_id': 1, 'from': 'f1', 'name': '阿鲸', 'kind': 'text', 'text': '晚上来码头吗？', 'ts': now - 60, 'state': 'sent'},
+                                                      {'msg_id': 2, 'from': 'f_mock', 'name': '小圆子', 'kind': 'text', 'text': '好呀', 'ts': now - 30, 'state': 'sent'}]}],
+                'meets': [{'meet_id': 'm_1', 'from': 'f1', 'to': 'f_mock', 'with': '阿鲸', 'place': 'pier', 'place_name': '码头', 'at': now + 3600, 'when_zh': '今天 20:00', 'what': '看日落', 'state': 'accepted'}],
+                'not_sent': [], 'limits': {'per_look': 2, 'unanswered': 3, 'day': 20, 'day_left': 19, 'text_max': 60}, 'groups': False}
+    return {}
+
+
+def _mock_new_post(self, route, body):
+    if not isinstance(body, dict):
+        return 400, {'error': 'TOWN_BAD_REQUEST'}
+    if route == 'social':
+        self.social_calls.append(body)
+        if body.get('item') == 'broke' or body.get('text') == 'broke':
+            return 200, {'ok': False, 'why': 'budget', 'reason': '今天的社交预算花完了，明天再做。'}
+        if body.get('do') not in ('gift', 'note', 'trip', 'party'):
+            return 400, {'error': 'TOWN_BAD_REQUEST', 'reason': 'do 只能是 gift / note / trip / party。'}
+        return 200, {'ok': True, 'state': 'paid', 'price_yuan': '0.12', 'item': body.get('item') or '', 'reason': '送出去了，摆进了她的房间。'}
+    if route in ('photo', 'song', 'paint_social'):
+        self.social_calls.append({'route': route, **body})
+        if route == 'song' and body.get('title') == '找不到':
+            return 200, {'order_id': 'sm_s', 'state': 'finding'}
+        return 200, {'order_id': 'sm_' + secrets.token_hex(2), 'state': 'finding' if route == 'song' else 'making', 'price_yuan': '0.25'}
+    if route == 'phone':
+        self.phone_sent.append(body)
+        if re.search(r'钱|转账|充值', str(body.get('text') or '')):
+            return 200, {'ok': False, 'outcome': 'money', 'reason': '消息里不能提钱。', 'day_left': 19}
+        return 200, {'ok': True, 'outcome': 'sent', 'day_left': 18}
+    if route == 'look':
+        self.looks.append({'note': body.get('look_note'), 'has_image': bool(body.get('image_b64')), 'drop': bool(body.get('drop_image')), 'bytes': len(body.get('image_b64') or '')})
+        raw = body.get('image_b64') or ''
+        if raw.startswith('RkFDRQ'):          # base64 of "FACE": a real person's photo
+            return 422, {'error': 'TOWN_SHOP_REFUSED', 'reason': '不收真人照片，换一张鱼或者画的头像吧。'}
+        return 200, {'source': 'owner', 'note': body.get('look_note') or '', 'has_image': bool(raw), 'source_zh': '主人上传的形象'}
+    return 404, {'error': 'TOWN_NOT_FOUND'}
+
+
+def _mock_media_event(self, kind):
+    if kind == 'song_for_you':
+        self.notify('media', {'what': 'song_for_you', 'order_id': 'sm_2', 'from': {'fish_id': 'f1', 'name': '阿鲸'}, 'facts': '阿鲸给你点了一首《晴天》，是她唱给你的。歌在你的相册里，镇上广播也放了。', 'ts': time.time()})
+    else:
+        self.notify('media', {'what': 'photo_done', 'order_id': 'sm_1', 'facts': '你和阿鲸的艺术照洗出来了（4张），放进了相册。你付了¥0.47。', 'ts': time.time(),
+                              'order': {'kind': 'photo', 'what': '艺术照（合影）', 'price_yuan': '0.47'}})
+
+
+Town.new_get = _mock_new_get
+Town.new_post = _mock_new_post
+Town.media_event = _mock_media_event
+Town.ALBUM_FILES = {'al_00000000000000a1': ('image/webp', bytes.fromhex('524946461a000000') + b'WEBPVP8 mock-photo-bytes'),
+                    'al_00000000000000a2': ('audio/mpeg', b'ID3\x03\x00\x00\x00\x00\x00\x00' + bytes(range(256)) * 4),
+                    'al_00000000000000a3': ('image/webp', bytes.fromhex('524946461a000000') + b'WEBPVP8 mock-paint-bytes')}
 
 
 def make_handler(town: Town):
@@ -458,7 +568,7 @@ def make_handler(town: Town):
 
         def _body(self):
             n = int(self.headers.get('Content-Length') or 0)
-            if n > 16 * 1024:
+            if n > (1200 * 1024 if self.path.endswith('/look') else 16 * 1024):
                 return None, (413, {'error': 'TOWN_BODY_TOO_LARGE'})
             raw = self.rfile.read(n) if n else b''
             try:
@@ -509,6 +619,17 @@ def make_handler(town: Town):
             q = parse_qs(u.query)
             if u.path == '/mock/report':
                 return self._send(200, town.report())
+            m = re.match(r'^/town/api/album/(al_[0-9a-f]{16})/(file|thumb)$', u.path)
+            if m:
+                if 'album' not in town.features or m.group(1) not in town.ALBUM_FILES:
+                    return self._send(404, {'error': 'TOWN_NOT_FOUND'})
+                kind, data = town.ALBUM_FILES[m.group(1)]
+                self.send_response(200)
+                self.send_header('Content-Type', kind)
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if not u.path.startswith('/town/api/outside/'):
                 return self._send(404, {'error': 'TOWN_NOT_FOUND'})
             if self._outage():
@@ -554,6 +675,10 @@ def make_handler(town: Town):
                                         'ties': [{'kind': 'promise', 'who': 'f1', 'who_name': '阿鲸', 'what': '打牌', 'due': now + 26 * 3600, 'when_zh': '明天20:00'}],
                                         'missed': [{'fish_id': 'f2', 'name': '小满', 'line': '泡泡今天怎么没来，有点想她', 'ts': now - 3600}],
                                         'buddy': {'fish_id': 'f1', 'name': '阿鲸', 'since': now - 86400}, 'guiding': []})
+            if route in NEW_GET:
+                if NEW_GET[route] not in town.features:
+                    return self._send(404, {'error': 'TOWN_OFF' if route in ('social', 'week', 'album', 'phone') else 'TOWN_NOT_FOUND'})
+                return self._send(200, town.new_get(route, q))
             return self._send(404, {'error': 'TOWN_NOT_FOUND'})
 
         def do_POST(self):
@@ -568,7 +693,15 @@ def make_handler(town: Town):
                 elif what == 'visit':
                     threading.Thread(target=town.run_visit, args=(int(body.get('lines', 4)),), daemon=True).start()
                 elif what == 'agency':
-                    threading.Thread(target=town.run_agency, args=(body.get('reasons'),), daemon=True).start()
+                    threading.Thread(target=town.run_agency, args=(body.get('reasons'), bool(body.get('social'))), daemon=True).start()
+                elif what == 'features':
+                    town.features = set(body.get('on') or [])
+                elif what == 'media':
+                    town.media_event(str(body.get('kind') or 'photo_done'))
+                elif what == 'phone_msg':
+                    town.notify('phone', {'what': 'phone', 'thread_id': 'dm:a:b', 'msg_id': 7, 'from': {'fish_id': 'f1', 'name': '阿鲸'},
+                                          'text': body.get('text') or '晚上来码头吗？', **({'meet': body['meet']} if body.get('meet') else {}), 'ts': time.time(),
+                                          'facts': '阿鲸给你发了消息：' + (body.get('text') or '晚上来码头吗？')})
                 elif what == 'new':
                     town.new = bool(body.get('on', True))
                 elif what == 'activity':
@@ -625,6 +758,10 @@ def make_handler(town: Town):
                 if body.get('place') not in ('pier', 'arcade'):
                     return self._send(404, {'error': 'TOWN_NOT_FOUND'})
                 return self._send(200, {'ok': True, 'place': body['place'], 'outcome': '钓到一条小黄鱼' if body['place'] == 'pier' else '投进 7 个球', 'ref': 'r_1', 'note': ''})
+            if route in NEW_POST:
+                if NEW_POST[route] not in town.features:
+                    return self._send(404, {'error': 'TOWN_OFF'})
+                return self._send(*town.new_post(route, body))
             if route == 'bless':
                 town.blesses = getattr(town, 'blesses', 0) + 1
                 return self._send(200, {'bless_id': 'b_1', 'state': 'collecting'})
@@ -653,6 +790,13 @@ def make_handler(town: Town):
                     town.prefs.update(body['prefs'])
                 if 'paused' in body:
                     town.paused = bool(body['paused'])
+                if 'social_day_cents' in body:
+                    if 'social' not in town.features:
+                        return self._send(400, {'error': 'TOWN_BAD_REQUEST'})
+                    town.social_cents = body['social_day_cents']
+                if 'social' in town.features:
+                    return self._send(200, {**town.status(), 'ok': True, 'settings': {'paused': town.paused, 'social_day_cents': town.social_cents,
+                                                                                  'social_day_cents_effective': 50 if town.social_cents is None else town.social_cents}})
                 return self._send(200, town.status())
             return self._send(404, {'error': 'TOWN_NOT_FOUND'})
     return H

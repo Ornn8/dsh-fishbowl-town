@@ -12,6 +12,7 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
   const workspaces = []
   let seq = 0
   const routes = new Map() // path -> handler (webServer.register kind 'exact')
+  const prefixes = new Map() // path -> handler (kind 'prefix': matches p and p/<anything>)
   const commands = new Map() // ctx.commands.register (the owner's /town)
   const tools = new Map() // name -> definition (ctx.tools.register, raw definitions as dsh-tools accepts them)
   const fence = { rejection: undefined } // what connection.requestRejection answers
@@ -103,7 +104,11 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
       async archiveSession(sid) { ctx.workspaceRegistry.archivedSessionIds.push(sid) },
     },
     webServer: {
-      register(r) { routes.set(r.path, r.handler); return () => routes.delete(r.path) },
+      register(r) {
+        const table = r.kind === 'prefix' ? prefixes : routes
+        table.set(r.path, r.handler)
+        return () => table.delete(r.path)
+      },
     },
     connection: { requestRejection: () => fence.rejection },
     commands: { register(def) { commands.set(def.name, def); return () => commands.delete(def.name) } },
@@ -132,19 +137,28 @@ export function createFakeHost({ model, latencyMs = 50 } = {}) {
   }
 
   /** One HTTP request to a route the plugin registered, the way DSH's web server hands it over. */
-  async function http(path, { method = 'GET', body } = {}) {
-    const handler = routes.get(path)
+  async function http(path, { method = 'GET', body, headers = {} } = {}) {
+    const pathname = path.split('?')[0]
+    let handler = routes.get(pathname)
+    if (!handler) { // longest prefix wins (DSH's webServer: p and p/<anything>)
+      const hit = [...prefixes.keys()].filter((p) => pathname === p || pathname.startsWith(p + '/')).sort((a, b) => b.length - a.length)[0]
+      handler = hit ? prefixes.get(hit) : undefined
+    }
     if (!handler) return { status: 404, json: null }
     const req = new EventEmitter()
     req.method = method
     req.url = path
-    req.headers = { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000' }
+    req.headers = { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', ...headers }
     req.destroy = () => {}
-    let out = ''
-    const res = { statusCode: 200, headers: {}, setHeader(k, v) { this.headers[k.toLowerCase()] = v }, end(x) { out = String(x ?? '') } }
-    setImmediate(() => { if (body !== undefined) req.emit('data', JSON.stringify(body)); req.emit('end') })
+    let out = Buffer.alloc(0)
+    const res = { statusCode: 200, headers: {}, setHeader(k, v) { this.headers[k.toLowerCase()] = v }, end(x) { out = Buffer.isBuffer(x) || x instanceof Uint8Array ? Buffer.from(x) : Buffer.from(String(x ?? '')) } }
+    setImmediate(() => {
+      if (body !== undefined) req.emit('data', typeof body === 'string' ? body : JSON.stringify(body))
+      req.emit('end')
+    })
     await handler(req, res)
-    return { status: res.statusCode, json: out ? JSON.parse(out) : null }
+    const isJson = /json/.test(String(res.headers['content-type'] || ''))
+    return { status: res.statusCode, json: isJson && out.length ? JSON.parse(out.toString('utf8')) : null, buffer: out, headers: res.headers }
   }
 
   /** The owner types a slash command (e.g. runCommand('town', 'status')) -> the handler's result. */

@@ -1,6 +1,6 @@
 {
   "name": "dsh-fishbowl-town",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "让你在 DSH 里养的鱼住进鱼缸小镇——打牌、串门、上日报。每一步都由 DSH 里的她（她的人设、她的模型）来答，小镇的事回来讲给你听。",
   "license": "MIT",
   "author": "鱼缸小镇 <https://fish.bside-moon.cn>",
@@ -92,7 +92,7 @@
         "https://fish.bside-moon.cn/town/api/outside/"
       ],
       "filesystem": [
-        "<DSH_HOME>/fishbowl-town/ (settings, state, saved pictures)"
+        "<DSH_HOME>/fishbowl-town/ (settings, state, saved pictures, album files you open)"
       ],
       "env": [
         "FISHBOWL_TOWN_CODE",
@@ -100,7 +100,7 @@
       ],
       "agentTools": "none (its preset has no tools)"
     },
-    "dataSent": "only her answers to the town turns (moves and lines) and her own settings; never chats, memory or files",
+    "dataSent": "only her answers to the town turns (moves, lines, and the town options she picks: gifts, photos, songs, phone messages), her own settings (incl. the daily social budget you set), and the avatar / look line you upload yourself; never chats, memory or files",
     "jurisdiction": [
       "CN"
     ],

@@ -332,7 +332,7 @@ test('her chat knows what she decided in town, and 「去小镇」 carries his w
     // the town sessions run the tool-less preset; the tools are for her chat with the owner
     assert.ok([...host.sessions.values()].every((s) => s.preset === 'fishbowl-town'))
     for (const s of host.sessions.values()) {
-      const want = s.title === '鱼缸小镇 · 心思' ? ['fishbowl_town_go', 'fishbowl_town_owner'] : ['fishbowl_town_go', 'fishbowl_town_owner', 'fishbowl_town_look', 'fishbowl_town_play', 'fishbowl_town_visit', 'fishbowl_town_place']
+      const want = s.title === '鱼缸小镇 · 心思' ? ['fishbowl_town_go', 'fishbowl_town_owner', 'fishbowl_town_friends'] : ['fishbowl_town_go', 'fishbowl_town_owner', 'fishbowl_town_look', 'fishbowl_town_play', 'fishbowl_town_visit', 'fishbowl_town_place', 'fishbowl_town_friends'] // 0.4.0: spending with friends is the owner chat's tool only (her own decisions use the answer's fields)
       assert.deepEqual(s.agent.denied, want, `town sessions do not see the chat tools (${s.title})`)
     }
   } finally {
