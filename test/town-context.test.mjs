@@ -14,13 +14,22 @@ const BONDS = {
 
 test('block is a few lines with the real line, the appointment time and the guidance', () => {
   const b = renderBlock(BONDS, { nowMs: NOW, herName: '泡泡·萝' })
-  assert.match(b, /明天20:00 和阿鲸，打牌/)
+  assert.match(b, /明天 20:00 和阿鲸，打牌/)
   assert.doesNotMatch(b, /路人/)
   assert.match(b, /小满说：「好久没见泡泡了，有点想她」/)
   assert.match(b, /喜欢小满/)
   assert.match(b, /愧疚/)
   assert.match(b, /花钱/)
   assert.ok(b.split('\n').length <= 7)
+})
+
+test('0.6.2: the appointment time is worked out from due when shown (a cached 「明天」 from yesterday is not trusted)', () => {
+  const nextDay = new Date(2026, 10, 14, 9, 0).getTime()
+  const b = renderBlock(BONDS, { nowMs: nextDay })
+  assert.match(b, /今天 20:00 和阿鲸，打牌/)
+  assert.doesNotMatch(b, /明天/)
+  const noDue = renderBlock({ ties: [{ who_name: '阿鲸', what: '打牌', when_zh: '周四晚上' }] }, { nowMs: NOW })
+  assert.match(noDue, /周四晚上 和阿鲸，打牌/)
 })
 
 test('empty or failed bonds give no block', () => {

@@ -123,3 +123,17 @@ test('0.6.0 the fish bar: one fish shows a quiet 「再带一条鱼」; several 
   assert.doesNotMatch(text(full), /再带一条/)
   assert.ok(mod.__test.Root(), 'Root renders')
 })
+
+test('0.6.2: 「你不在这几天」 shows when the town has it (her lines, how long), and nothing when it has not', () => {
+  const { mod, React } = load()
+  const away = { title: '你不在这几天', since: 1794400000, back: null, days_zh: '2天', lines: [{ fish_id: 'f1', name: '涟', line: '屿，醒了没？', ts: 1794420000 }] }
+  React.useState = () => [{ ok: true, available: true, data: { away } }, () => {}]
+  const el = mod.__test.AwayCard()
+  assert.match(text(el), /你不在这几天/)
+  assert.match(text(el), /她已经2天没来小镇了/)
+  assert.match(text(el), /涟：「屿，醒了没？」/)
+  React.useState = () => [{ ok: true, available: true, data: { away: null } }, () => {}]
+  assert.equal(mod.__test.AwayCard(), null)
+  React.useState = () => [null, () => {}]
+  assert.equal(mod.__test.AwayCard(), null)
+})

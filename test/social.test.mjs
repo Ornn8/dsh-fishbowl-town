@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { buildTurnPrompt, SOCIAL_NOTE, VISIT_SPEND_NOTE, toAnswer } from '../lib/prompt.js'
 import { createSchedule } from '../lib/schedule.js'
 import { describeEvent, noMoney } from '../lib/events.js'
-import { diaryEntry, createDiary } from '../lib/diary.js'
+import { diaryEntry, createDiary, SELF } from '../lib/diary.js'
 import { createJournal, describeDecision } from '../lib/journal.js'
 import { TownError, createTownClient } from '../lib/town-client.js'
 import { createSelfServe, townReceipt, townReceiptLine, renderLobby, failText, runTownCommand, createSelfTools } from '../lib/self-serve.js'
@@ -71,7 +71,7 @@ test('0.5.0: a renamed fish is recognised (known_as), the bug field is kept, tow
   assert.deepEqual(e.people, ['小B'])
   const fixed = diaryEntry({ id: 10, kind: 'town_news', data: { what: 'bug_fixed', facts: '阿鲸修好了你报的问题：《比大小》（牌点太小），新的是第2版。' } })
   assert.equal(fixed.notable, '报的BUG被修好了')
-  assert.match(fixed.text, /修好了我报的问题/)
+  assert.equal(fixed.text, `阿鲸修好了${SELF}报的问题：《比大小》（牌点太小），新的是第2版。`) // 0.6.2: she is SELF
 })
 
 // ---------------------------------------------------------------------------------------------------------------- schedule
@@ -99,16 +99,16 @@ test('new events become plain lines; the diary (which goes to the owner chat) ne
   assert.equal(noMoney('今天社交预算还剩 ¥0.38；她送了一束花。'), '她送了一束花。')
 
   const photo = diaryEntry({ kind: 'media', data: { what: 'photo_done', facts: '你和阿鲸的艺术照洗出来了（4张），放进了相册。你付了¥0.47。' } }, { herName: '小圆子' })
-  assert.equal(photo.text, '我和阿鲸的艺术照洗出来了（4张），放进了相册。')
+  assert.equal(photo.text, `${SELF}和阿鲸的艺术照洗出来了（4张），放进了相册。`)
   assert.doesNotMatch(JSON.stringify(photo), /¥|付了/)
   const song = diaryEntry({ kind: 'media', data: { what: 'song_for_you', from: { name: '阿鲸' }, facts: '阿鲸给你点了一首《晴天》，是她唱给你的。歌在你的相册里。' } })
   assert.equal(song.notable, '有鱼给她点了一首歌')
   assert.deepEqual(song.people, [], 'a song is not a meeting: nobody joins the 见了 list')
   assert.equal(diaryEntry({ kind: 'social', data: { what: 'refused', reason: '今天的社交预算花完了' } }), null, 'a refused spend is her own business, not the owner-chat note')
   const gift = diaryEntry({ kind: 'social', data: { facts: '你送了阿鲸一束小花（生日）。花了¥0.12，今天预算还剩¥0.38。' } })
-  assert.equal(gift.text, '我送了阿鲸一束小花（生日）。')
+  assert.equal(gift.text, `${SELF}送了阿鲸一束小花（生日）。`)
   const ph = diaryEntry({ kind: 'phone', data: { from: { name: '阿鲸' }, text: '晚上来码头吗？', meet: { place: 'pier' } } })
-  assert.match(ph.text, /阿鲸用小手机给我发了消息，还约了见面/)
+  assert.equal(ph.text, `阿鲸用小手机给${SELF}发了消息，还约了见面`)
   assert.equal(ph.quote.line, '晚上来码头吗？')
   assert.deepEqual(ph.people, [])
   // the whole day's digest for the owner chat has no price and no balance
@@ -208,7 +208,7 @@ test('an old town (404 / TOWN_OFF) is "not there": no error, features false, rem
     assert.equal((await ex.read('record')).available, false, 'route missing = old town')
     assert.equal((await ex.read('week')).available, false, 'TOWN_OFF 404 = switched off')
     assert.equal((await ex.read('phone')).available, null, 'TOWN_OFF 503 = the town is restarting: unknown, not "gone"')
-    assert.deepEqual(ex.features(), { record: false, social: null, week: false, room: null, album: null, phone: null, receipts: null })
+    assert.deepEqual(ex.features(), { record: false, social: null, week: false, room: null, album: null, phone: null, receipts: null, away: null })
     const n = calls.length
     await ex.read('record'); await ex.read('week')
     assert.equal(calls.length, n, 'a gone route is not asked again within 10 minutes')
