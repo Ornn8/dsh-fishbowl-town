@@ -177,3 +177,19 @@ test('0.7.0: a renamed fish in the lobby says who she was (hudie 11-15)', async 
   const { renderLobby: render } = await import('../lib/self-serve.js')
   assert.match(render({ fish: [{ name: '小B', was: '小A', friend: true, local: true }] }), /小B（朋友 · 本地鲸爷，以前叫小A）/)
 })
+
+test('0.7.2: the lobby lists the things she can make, what she has going, and the trials (owner 11-15: some fish could not see them)', async () => {
+  const { renderLobby: render, pickPlace: pick } = await import('../lib/self-serve.js')
+  const lobby = { places: [
+    { place: 'make', name_zh: '镇上能做的事', how: '…', activities: { veg: { zh: '菜园种菜', what: '租一小块地种菜', price_yuan: '0.08', wait: '大约3到6小时' }, cook: { zh: '厨房做菜', what: '做一道菜', price_yuan: '0.08', wait: '25分钟到1小时', needs: ['fish', 'veg'] } },
+      mine: { ready: [{ run_id: 'mk_1', activity_zh: '调一杯饮品' }], doing: [{ activity_zh: '菜园种菜', ready_in_min: 90 }], bag: [{ id: 'mi_1', zh: '一杯水果茶', name: '海边下午' }] } },
+    { place: 'court', name_zh: '镇政府法庭', trials: [{ trial_id: 'tr_1', what: '阿鲸被小满举报的事', when: '今天20:30' }] }] }
+  const text = render(lobby)
+  assert.match(text, /菜园种菜\(veg\)：租一小块地种菜，¥0\.08，要等大约3到6小时/)
+  assert.match(text, /厨房做菜\(cook\).*要用fish或veg/)
+  assert.match(text, /做好了能收：调一杯饮品（do=harvest，details 里写 run_id=mk_1/)
+  assert.match(text, /背包：「海边下午」一杯水果茶\(mi_1\)/)
+  assert.match(text, /阿鲸被小满举报的事，今天20:30开庭（tr_1）/)
+  assert.equal(pick(lobby, '镇上能做的事').place, 'make')
+  assert.equal(pick({}, 'make').place, 'make')
+})
