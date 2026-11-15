@@ -172,3 +172,21 @@ test('0.7.6: between his returns, what just happened in town (a game, a photo) i
   t += 11 * 60_000
   assert.equal((await run('s1')).messages.length, 1)                       // nothing new since: nothing added
 })
+
+test('0.7.7: his words get one line of where she is now; again when it changes, else every 30 minutes (hudie 11-15)', async () => {
+  let t = NOW
+  let where = '在漪家门口，敲了门，门还没开'
+  const { run } = hostWith({ fetchBonds: async () => BONDS, fetchNow: async () => where, isOwnerChat: () => true, now: () => t, extras: () => ({}) })
+  const first = await run('s1')
+  assert.match(first.messages[1].content[0].text, /- 你现在：在漪家门口，敲了门，门还没开/)          // he came back: in the full note
+  t += 2 * 60_000
+  assert.equal((await run('s1')).messages.length, 1)                                              // same place, too soon: nothing
+  where = '在漪家，正和漪聊着'
+  t += 2 * 60_000
+  const moved = await run('s1')
+  const text = moved.messages[1].content[0].text
+  assert.match(text, /- 你现在：在漪家，正和漪聊着/)
+  assert.doesNotMatch(text, /小满说/)                                                              // one line, not the whole note
+  t += 31 * 60_000
+  assert.equal((await run('s1')).messages.length, 2)                                              // unchanged for 30 min: said again
+})
