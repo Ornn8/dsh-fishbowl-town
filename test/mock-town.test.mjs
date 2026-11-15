@@ -317,7 +317,7 @@ test('her chat knows what she decided in town, and 「去小镇」 carries his w
     // later: the pull goes through, her 心思 session sees his words and her recent days, and she decides
     await post('/mock/reset')
     r = await host.callTool('fishbowl_town_go', { wish: '去打两把海龟汤' })
-    assert.match(r, /决定：报名（海龟汤）/, r)
+    assert.match(r, /替你定了：报名（海龟汤）/, r)
     assert.match(r, /主人想看我玩海龟汤/)
     const mind = seen.filter((x) => x.last.includes('该你自己拿主意')).pop().last
     assert.match(mind, /主人刚才在聊天里跟你说】\n「去打两把海龟汤」/)
@@ -527,7 +527,7 @@ test('0.3.3 on an old town: her plan sets her rest, idle wakes and rests cost no
     assert.equal(st.spend == null, true)
     assert.equal(st.wakeMinMinutes, 0)
     const hist = (await host.runCommand('town', 'history')).text
-    assert.match(hist, /她决定：什么都不做/)
+    assert.match(hist, /小镇那边替她定了：什么都不做/)
     const status = (await host.runCommand('town', 'status')).text
     assert.match(status, /她的模型被叫了：今天 2 次/)
     assert.match(status, /下次拿主意/)
@@ -566,6 +566,28 @@ test('0.3.3 on a new town: floors are told to the town, spending shows today / 7
     r = await host.http('/fishbowl-town/save', { method: 'POST', body: { quietHours: '晚上' } })
     assert.equal(r.status, 400)
     assert.equal((await host.http('/fishbowl-town/state')).json.quietHours, '')
+  } finally {
+    await host.dispose()
+  }
+})
+
+test('0.7.10: a held treat never reaches the town — the town session is asked again, and what it still writes is taken out', { timeout: 120_000 }, async () => {
+  await post('/mock/reset')
+  const asked = []
+  const model = async ({ history, title }) => {
+    const last = history[history.length - 1].text
+    if (title !== '鱼缸小镇 · 串门') return last.includes('该你自己拿主意') ? JSON.stringify({ action: 'none', plan: { hours: 8, doing: '歇着' } }) : '{}'
+    if (last.includes('刚才的回答里有她要先停住')) { asked.push(last); return JSON.stringify({ say: '这个我得先问问我自己，回头答复你', next: 'wrap_up', how: '道别', act: asked.length > 1 ? { kind: 'gift', item: '贝壳' } : null }) }
+    return JSON.stringify({ say: '我请你喝杯热可可！', next: 'go_on', act: { kind: 'cafe', item: '热可可' } })
+  }
+  const host = await startPlugin(model)
+  try {
+    assert.match(await host.callTool('fishbowl_town_rules', { hold: ['spend'] }), /停住等你一句/)
+    await post('/mock/visit', { lines: 3 })
+    await waitFor(async () => (await report()).visits.length === 1, 60_000)
+    const acts = (await report()).visits[0].acts || []
+    assert.ok(acts.length >= 1 && acts.every((a) => a === null), JSON.stringify(acts))
+    assert.ok(asked.length >= 1 && /在串门时请喝东西（热可可）/.test(asked[0]), 'the town session was told what to take out')
   } finally {
     await host.dispose()
   }

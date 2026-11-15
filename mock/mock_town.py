@@ -223,6 +223,8 @@ class Town:
                                           ensure_ascii=False) + '\n【刚才的对话】\n' + talk)
             text = self.ask('visit', vid, 'visit', 'visit_turn', 2, VISIT_RULES, user, max_tokens=120)
             obj = parse_json(text) if text is not None else None
+            if obj is not None:
+                outcome.setdefault('acts', []).append(obj.get('act'))   # 0.7.10: what reached the town (a held treat must not)
             if obj and isinstance(obj.get('say'), str) and obj['say'].strip():
                 dialogue.append({'name': '小圆子', 'line': self.screen(obj['say'])})
                 outcome['answered'] += 1

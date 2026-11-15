@@ -158,7 +158,7 @@ test('0.3.3 /town history: her last things in the owner voice, failures too', as
   assert.match(lines[0], /主人跟她说：「去打一局」/)
   assert.match(lines[1], /想去串门，没成/)
   assert.match(lines[2], /主人让她开了一桌狼人杀/)
-  assert.match(lines[3], /她决定：什么都不做，歇着——「有点困」，说：「先歇着」；打算 180 分钟后再看看/)
+  assert.match(lines[3], /小镇那边替她定了：什么都不做，歇着——「有点困」，说：「先歇着」；打算 180 分钟后再看看/)
   const ss = createSelfServe({ live: () => null, journal: j })
   const res = await runTownCommand('history', { selfServe: ss, status: async () => '', history: async () => lines.join('\n') })
   assert.equal(res.kind, 'success')
