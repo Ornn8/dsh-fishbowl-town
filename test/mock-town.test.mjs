@@ -331,9 +331,11 @@ test('her chat knows what she decided in town, and 「去小镇」 carries his w
     assert.match(r, /暂停/)
     // the town sessions run the tool-less preset; the tools are for her chat with the owner
     assert.ok([...host.sessions.values()].every((s) => s.preset === 'fishbowl-town'))
+    // 0.7.9: an allow-list, so a global tool registered later (another plugin's) never reaches a town session
+    // (DSH defers tools that appear after a session starts; a session that started with none then has only deferred tools and DeepSeek refuses the turn)
     for (const s of host.sessions.values()) {
-      const want = s.title === '鱼缸小镇 · 心思' ? ['fishbowl_town_go', 'fishbowl_town_owner', 'fishbowl_town_phone', 'fishbowl_town_album', 'fishbowl_town_chats', 'fishbowl_town_rules', 'fishbowl_town_friends'] : ['fishbowl_town_go', 'fishbowl_town_owner', 'fishbowl_town_phone', 'fishbowl_town_album', 'fishbowl_town_chats', 'fishbowl_town_rules', 'fishbowl_town_look', 'fishbowl_town_play', 'fishbowl_town_visit', 'fishbowl_town_place', 'fishbowl_town_friends'] // 0.4.0: spending with friends is the owner chat's tool only (her own decisions use the answer's fields)
-      assert.deepEqual(s.agent.denied, want, `town sessions do not see the chat tools (${s.title})`)
+      const want = s.title === '鱼缸小镇 · 心思' ? ['fishbowl_town_look', 'fishbowl_town_play', 'fishbowl_town_visit', 'fishbowl_town_place'] : []
+      assert.deepEqual(s.agent.allowed, want, `town sessions keep only their own tools (${s.title})`)
     }
   } finally {
     await host.dispose()
@@ -421,7 +423,7 @@ test('activity turns are hers; 夸夸群 and heart consent go through her owner'
     const daily = [...host.sessions.values()].find((s) => s.title === '鱼缸小镇 · 日常')
     assert.equal(daily.preset, 'fishbowl-town')
     assert.match(seen.find((x) => x.title === '鱼缸小镇 · 日常').last, /你在码头要开口/)
-    assert.ok(daily.agent.denied.includes('fishbowl_town_owner'))
+    assert.deepEqual(daily.agent.allowed, [], 'the daily session keeps no global tool')
     // a line she cannot produce: the plugin says unsupported in time (the town writes it), never a timeout
     await post('/mock/activity', { purpose: 'crime.witness' })
     const crime = await waitFor(async () => (await report()).activities[1], 40_000)

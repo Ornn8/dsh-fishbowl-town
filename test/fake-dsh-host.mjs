@@ -52,10 +52,13 @@ export function createFakeHost({ model, latencyMs = 50, hijack = null } = {}) {
       session: makeSession(sid, s),
       status: 'idle',
       denied: [], // tools masked for this agent (agent.ctx.tools.restrict)
+      allowed: null, // 0.7.9: the allow-list (null = none set); restrictions intersect like DSH's
       // like DSH 0.2.1: restrict() throws on a name that is not a registered global tool (0.3.1 shipped a stale name and the mask failed)
       ctx: { tools: { restrict(filter) {
-        for (const n of filter.deny || []) if (!tools.has(n)) throw new Error(`tools.restrict() names unknown global tool "${n}"`)
-        agent.denied.push(...(filter.deny || [])); return () => {}
+        for (const n of [...(filter.allow || []), ...(filter.deny || [])]) if (!tools.has(n)) throw new Error(`tools.restrict() names unknown global tool "${n}"`)
+        agent.denied.push(...(filter.deny || []))
+        if (filter.allow) agent.allowed = agent.allowed ? agent.allowed.filter((n) => filter.allow.includes(n)) : [...filter.allow]
+        return () => {}
       } } },
       followup(message) {
         if (!message || message.role !== 'user' || !Array.isArray(message.content)) throw new Error('SessionFormatError')
@@ -81,12 +84,16 @@ export function createFakeHost({ model, latencyMs = 50, hijack = null } = {}) {
           text = await model({ system, history: s.messages.slice(), sessionId: sid, title: s.title, agent })
         } catch (error) {
           text = ''
+          if (error && error.provider) agent.failWith = error.message
         }
         if (text && typeof text === 'object') { usage = text.usage || null; text = text.text || '' }
         s.requests = (s.requests || 0) + 1
         await new Promise((r) => setTimeout(r, latencyMs))
         if (agent.cancelled) {
           emit('session/event', agent.session, { type: 'turn/end', data: { turn: myTurn, reason: { kind: 'cancelled' } } })
+        } else if (usage === null && text === '' && agent.failWith) {
+          // 0.7.9: the provider refused the request (DSH ends the turn with an error reason, no reply)
+          emit('session/event', agent.session, { type: 'turn/end', data: { turn: myTurn, reason: { kind: 'error', message: agent.failWith } } })
         } else {
           s.messages.push({ role: 'assistant', text })
           const data = { turn: myTurn, message: { role: 'assistant', content: [{ type: 'text', text }] }, ...(usage ? { usage } : {}) }

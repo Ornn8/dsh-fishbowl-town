@@ -144,3 +144,16 @@ test('the correction for the same turn stays in the session that has the questio
 })
 
 test('cleanup', () => { rmSync(WORK, { recursive: true, force: true }) })
+
+test('0.7.9: a turn the provider refuses retires that session; the next step opens a fresh one (11-16 「All tools cannot be deferred」)', async () => {
+  let refuse = true
+  const model = async () => {
+    if (refuse) { refuse = false; throw Object.assign(new Error('tools: at least one tool must have defer_loading=false. All tools cannot be deferred.'), { provider: true }) }
+    return '{"vote":"鲸"}'
+  }
+  const { brain, townSessions } = setup({ model })
+  await assert.rejects(brain.ask('game', '轮到你投票', { timeoutMs: 5000 }), /All tools cannot be deferred/)
+  assert.equal(await brain.ask('game', '轮到你投票', { timeoutMs: 5000 }), '{"vote":"鲸"}')
+  const games = townSessions().filter(([, s]) => s.title.startsWith('鱼缸小镇 · 牌桌'))
+  assert.equal(games.length, 2, 'the refused session is not used again')
+})
