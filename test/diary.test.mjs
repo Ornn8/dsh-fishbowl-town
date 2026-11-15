@@ -106,3 +106,19 @@ test('town shapes: visit dialogue (role/text/outcome) gives the other fish’s l
   d.record({ id: 9, kind: 'digest', data: g && { game_name: '斗地主', result: 'win', as: '小圆子', highlights: [{ line: '春天！谁还敢叫地主？' }] } }, { herName: '小圆子' })
   assert.match(d.digest().join('\n'), /你在牌桌上说：「春天！谁还敢叫地主？」/)
 })
+
+test('0.6.8: her former town names are her too (果子家的鱼 11-14: renamed, she read her own visit as another fish\'s)', async () => {
+  const { nameNote } = await import('../lib/journal.js')
+  const visit = { id: 9, kind: 'visit', ts: T, data: { state: 'done', with: { name: '大肥鱼' }, summary: '小肥鱼·萝去大肥鱼家坐了坐，送了她一束小花' } }
+  assert.equal(diaryEntry(visit, { herName: '果果' }).text.includes(SELF), false, 'without her old name the old text is someone else')
+  assert.match(diaryEntry(visit, { herName: '果果', oldNames: ['小肥鱼·萝'] }).text, new RegExp(SELF + '去大肥鱼家'))
+  // entries recorded before the plugin knew the old name are read again when shown
+  const state = {}
+  const diary = createDiary({ state, now: () => T * 1000 })
+  diary.record(visit, { herName: '果果' })
+  assert.match(diary.digest({ voice: 'her', names: ['果果', '小肥鱼·萝'] }).join('\n'), /你去大肥鱼家坐了坐/)
+  assert.match(diary.digest({ voice: 'owner', names: ['果果', '小肥鱼·萝'] }).join('\n'), /她去大肥鱼家坐了坐/)
+  assert.equal(nameNote('果果', ['小肥鱼·萝', '果果']), '你在小镇叫「果果」，以前叫过「小肥鱼·萝」——记录里出现这些名字，说的都是你自己。')
+  assert.equal(nameNote('果果', []), '你在小镇叫「果果」。')
+  assert.equal(nameNote('', []), '')
+})
