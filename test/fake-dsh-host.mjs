@@ -220,7 +220,7 @@ export function createFakeHost({ model, latencyMs = 50, hijack = null } = {}) {
         const s = sessions.get(sid)
         s.updatedAt = Date.now()
         const before = s.messages.length
-        s.agent.followup({ id: 'm' + (++seq), role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } })
+        s.agent.followup({ id: 'm' + (++seq), role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'rpc-' + seq } }) // (typed in DSH: real DSH stamps rpcId)
         return new Promise((resolve) => { const t = setInterval(() => { if (s.messages.length >= before + 2 && s.agent.status === 'idle') { clearInterval(t); resolve(s.messages[s.messages.length - 1].text) } }, 20) })
       },
     }

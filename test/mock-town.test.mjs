@@ -467,7 +467,7 @@ test('a town session the owner types in is given to him: town turns move to a ne
     assert.ok(table, 'the plugin made its 牌桌 session')
     const [sid, s] = table
     // he types into it (as if DSH's 新会话 had put him there)
-    s.agent.followup({ id: 'owner-1', role: 'user', content: [{ type: 'text', text: '在吗，今天好累' }], source: { kind: 'user' } })
+    s.agent.followup({ id: 'owner-1', role: 'user', content: [{ type: 'text', text: '在吗，今天好累' }], source: { kind: 'user', rpcId: 'rpc-owner-1' } })
     await waitFor(() => s.messages.length >= 4 && s.agent.status === 'idle')
     const mine = s.messages.length
     await post('/mock/game', { rounds: 2 })

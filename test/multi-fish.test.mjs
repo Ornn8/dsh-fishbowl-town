@@ -46,7 +46,7 @@ async function waitFor(fn, ms = 60_000) {
 
 test('settings: old single-code configs are fish 1; ids, max 3, the env code only for fish 1', () => {
   const env = { FISHBOWL_TOWN_CODE: 'fbo_env_code_123' }
-  assert.deepEqual(fishEntries({ code: 'fbo_a', persona: 'p', reportSessionId: 's1' }, {}, {}), [{ id: '1', code: 'fbo_a', persona: 'p', chatSid: 's1', enabled: true }])
+  assert.deepEqual(fishEntries({ code: 'fbo_a', persona: 'p', reportSessionId: 's1' }, {}, {}), [{ id: '1', code: 'fbo_a', persona: 'p', chatSid: 's1', alsoSids: [], enabled: true }])
   assert.equal(fishEntries({}, {}, env)[0].code, 'fbo_env_code_123')
   const many = fishEntries({ fish: [{ id: '1', code: '' }, { id: '2', code: 'fbo_b' }, { id: '2', code: 'dup' }, { id: '3' }, { id: '4' }] }, { code: 'fbo_raw' }, env)
   assert.deepEqual(many.map((x) => [x.id, x.code]), [['1', 'fbo_raw'], ['2', 'fbo_b'], ['3', '']])
@@ -130,7 +130,7 @@ test('two fish in one DSH: own codes, own sessions, own persona, tools and /town
     const refused = await host.http('/fishbowl-town/save', { method: 'POST', body: { addFish: true } })
     assert.equal(refused.status, 400)
     // binding fish 3 to chat A takes chat A away from fish 1 (one fish per chat)
-    host.sessions.get(chatA.sid).agent.followup({ id: 'o1', role: 'user', content: [{ type: 'text', text: '在吗' }], source: { kind: 'user' } })
+    host.sessions.get(chatA.sid).agent.followup({ id: 'o1', role: 'user', content: [{ type: 'text', text: '在吗' }], source: { kind: 'user', rpcId: 'rpc-o1' } })
     await waitFor(() => host.sessions.get(chatA.sid).messages.length >= 2)
     const bound = (await host.http('/fishbowl-town/save?fish=3', { method: 'POST', body: { bindLatest: true } })).json
     assert.equal(bound.reportSessionId, chatA.sid)
@@ -198,6 +198,21 @@ test('0.6.6: the setup tool makes the chat it is called in her home, with the co
     await other.say('在吗')
     s = (await host.http('/fishbowl-town/state')).json
     assert.equal(s.fish[0].chatSid, other.sid)
+    // 0.7.4: called again in another chat (his QQ private chat) while she lives in one: that chat is joined, her home stays
+    const qq = await host.ownerChat('QQ 私聊')
+    const joined = await host.callTool(plugin.SETUP_TOOL, {}, { sessionId: qq.sid })
+    assert.match(joined, /这个会话也接上了/)
+    s = (await host.http('/fishbowl-town/state')).json
+    assert.equal(s.fish[0].chatSid, other.sid)
+    assert.deepEqual(s.alsoSessions.map((x) => x.sid), [qq.sid])
+    // the page takes it off again, and adds one by its id; her home is never an also-session
+    s = (await host.http('/fishbowl-town/save', { method: 'POST', body: { removeAlso: qq.sid } })).json
+    assert.deepEqual(s.alsoSessions, [])
+    s = (await host.http('/fishbowl-town/save', { method: 'POST', body: { addAlso: other.sid } })).json
+    assert.deepEqual(s.alsoSessions, [])
+    s = (await host.http('/fishbowl-town/save', { method: 'POST', body: { addAlso: qq.sid } })).json
+    assert.deepEqual(s.alsoSessions.map((x) => x.sid), [qq.sid])
+    assert.match((await host.http('/fishbowl-town/save', { method: 'POST', body: { addAlso: 'forward' } })).json.message, /QQ 里跟她说一句/)
   } finally {
     await host.dispose()
   }
