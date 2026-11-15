@@ -165,3 +165,10 @@ test('0.3.3 /town history: her last things in the owner voice, failures too', as
   assert.match(res.text, /主人让她开了一桌狼人杀/)
   assert.match((await runTownCommand('help', { selfServe: ss, status: async () => '' })).text, /\/town history/)
 })
+
+test('0.6.9: the lobby names each fish with the town\'s labels (hudie 11-15: only 朋友 / 镇民 showed)', async () => {
+  const { renderLobby: render, fishTag } = await import('../lib/self-serve.js')
+  const text = render({ fish: [{ name: '阿鲸', friend: true, local: true }, { name: '小满', outside: true }, { name: '海伯', resident: true }, { name: '豆豆' }] })
+  assert.match(text, /阿鲸（朋友 · 本地鲸爷）、小满（外来）、海伯（镇民）、豆豆/)
+  assert.equal(fishTag(null), '')
+})
