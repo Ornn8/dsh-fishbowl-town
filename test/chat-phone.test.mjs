@@ -17,3 +17,26 @@ test('0.7.1: 看看小手机 shows her phone so she can answer a message her own
   assert.match(out, /你 的小手机/)
   assert.match(out, /阿鲸：晚上来打牌吗？/)
 })
+
+test('0.7.6: 翻相册 lists her album with local files; 翻串门记录 lists visits and one visit word by word (白团 / hudie 11-15)', async () => {
+  const state = {}
+  const journal = createJournal({ state, saveState: () => {} })
+  const visits = [{ visit_id: 'v2', role: 'guest', with: { name: '肥鱼一号' }, place: 'home', started: 1794700000, lines: 18, summary: '肥鱼一号请喝了热可可' }]
+  const client = {
+    status: async () => ({ outside_state: 'in_town' }),
+    visitList: async () => ({ visits }),
+    visitLines: async (id) => ({ visit: visits.find((v) => v.visit_id === id), dialogue: [{ name: '肥鱼一号', text: '给你倒杯热可可' }, { name: '白团', text: '谢啦' }] }),
+  }
+  const album = { items: [{ item_id: 'al_0123456789abcdef', kind: 'photo', what: '在咖啡店的合照', with: [{ name: '莫汐' }], price_yuan: 0.2, paid_by: '白团' }] }
+  const extras = { read: async () => ({ available: true, data: album }), fetchNewest: async (items) => new Map([[items[0].item_id, '/x/album/al_0123456789abcdef.webp']]) }
+  const tools = createChatTools({ log: { debug() {}, info() {} }, journal, state, live: () => ({ client }), herName: () => '白团', extras })
+  const albumOut = await tools.find((t) => t.name === 'fishbowl_town_album').execute({}, {})
+  assert.match(albumOut, /你 的相册/)
+  assert.match(albumOut, /在咖啡店的合照/)
+  assert.match(albumOut, /文件：\/x\/album\/al_0123456789abcdef\.webp/)
+  const chats = tools.find((t) => t.name === 'fishbowl_town_chats')
+  assert.match(await chats.execute({}, {}), /你去找肥鱼一号/)
+  const one = await chats.execute({ n: 1 }, {})
+  assert.match(one, /肥鱼一号：给你倒杯热可可/)
+  assert.match(await chats.execute({ n: 5 }, {}), /没有第 5 次/)
+})

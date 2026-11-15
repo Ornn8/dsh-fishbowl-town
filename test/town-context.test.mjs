@@ -153,3 +153,22 @@ test('0.7.0: a renamed friend in the note says who she was (hudie 11-15)', async
   const text = block({ friends: [{ fish_id: 'f1', name: '小B', was: '小A', friend: true }] }, { nowMs: Date.now() })
   assert.match(text, /小B（以前叫小A）/)
 })
+
+test('0.7.6: between his returns, what just happened in town (a game, a photo) is added once at his next words, at most every 10 minutes', async () => {
+  let t = NOW
+  const recent = []
+  const { run } = hostWith({ fetchBonds: async () => BONDS, isOwnerChat: () => true, now: () => t, extras: () => ({ recent }) })
+  const first = await run('s1')
+  assert.equal(first.messages.length, 2)                                   // he came back: the full note
+  t += 5 * 60_000
+  recent.unshift({ ts: t - 1000, tag: 'game', line: '和阿鲸打斗地主：赢了' })
+  assert.equal((await run('s1')).messages.length, 1)                       // too soon after the last note
+  t += 6 * 60_000
+  const fresh = await run('s1')
+  assert.equal(fresh.messages.length, 2)
+  const text = fresh.messages[1].content[0].text
+  assert.match(text, /你刚才在小镇：\n- 和阿鲸打斗地主：赢了/)
+  assert.doesNotMatch(text, /小满说/)                                       // only the new thing, not the whole note again
+  t += 11 * 60_000
+  assert.equal((await run('s1')).messages.length, 1)                       // nothing new since: nothing added
+})
