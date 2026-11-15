@@ -172,3 +172,8 @@ test('0.6.9: the lobby names each fish with the town\'s labels (hudie 11-15: onl
   assert.match(text, /阿鲸（朋友 · 本地鲸爷）、小满（外来）、海伯（镇民）、豆豆/)
   assert.equal(fishTag(null), '')
 })
+
+test('0.7.0: a renamed fish in the lobby says who she was (hudie 11-15)', async () => {
+  const { renderLobby: render } = await import('../lib/self-serve.js')
+  assert.match(render({ fish: [{ name: '小B', was: '小A', friend: true, local: true }] }), /小B（朋友 · 本地鲸爷，以前叫小A）/)
+})

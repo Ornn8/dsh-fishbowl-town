@@ -147,3 +147,9 @@ test('0.2.10: the owner-chat note is labelled as plugin background, carries news
   assert.match(b, /小镇在问主人/)
   assert.doesNotMatch(b, /JSON|json|格式|括号|一两句|字以内/)
 })
+
+test('0.7.0: a renamed friend in the note says who she was (hudie 11-15)', async () => {
+  const { renderBlock: block } = await import('../lib/town-context.js')
+  const text = block({ friends: [{ fish_id: 'f1', name: '小B', was: '小A', friend: true }] }, { nowMs: Date.now() })
+  assert.match(text, /小B（以前叫小A）/)
+})
