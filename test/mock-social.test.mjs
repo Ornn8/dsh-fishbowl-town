@@ -15,7 +15,7 @@ const PORT = 19000 + Math.floor(Math.random() * 900)
 const BASE = `http://127.0.0.1:${PORT}`
 const CODE = 'fbo_' + randomBytes(24).toString('base64url')
 const PNG1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
-const ALL = ['receipts', 'record', 'social', 'week', 'room', 'album', 'phone', 'look']
+const ALL = ['receipts', 'record', 'social', 'week', 'room', 'album', 'phone', 'look', 'visits']
 let mock
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -127,6 +127,7 @@ test('an OLD town: nothing new shows, nothing errors, nothing is spent; the deci
       assert.equal(r.kind, 'success', verb)
       assert.match(r.text, /还没有这一项|还没有社交消费/, verb)
     }
+    assert.match((await cmd(host, 'chats')).text, /还不认这一项（等小镇更新）/)                // 0.7.5 on a town before d96aab7
     const b = await cmd(host, 'budget 1')
     assert.equal(b.kind, 'error')
     assert.match(b.text, /还不认/)
@@ -231,6 +232,16 @@ test('a NEW town: page data, album files you can see and hear, budget, look, com
     assert.match((await cmd(host, 'phone')).text, /和阿鲸（1 条她还没看）/)
     assert.match((await cmd(host, 'record')).text, /共 12 局，7 胜 4 负/)
     assert.match((await cmd(host, 'receipts')).text, /没成｜去电玩城没说玩哪台机器。（ARCADE_NO_MACHINE）/)
+    // 0.7.5 (owner 11-15 「外接鱼看不到聊天记录原文吗」→「是 DSH 那边」): her visits, then one line by line
+    const chats = (await cmd(host, 'chats')).text
+    assert.match(chats, /1\. .* 她去找阿鲸，去阿鲸家：去阿鲸家看草莓/)
+    assert.match(chats, /2\. .* 她去找小满，去小满家（对方不在家）/)
+    const one = (await cmd(host, 'chats 1')).text
+    assert.match(one, /小圆子：阿鲸我来啦\n阿鲸：草莓刚红，快来尝\n（小圆子 · gift · 一束小花）\n小圆子：那我不客气啦\n结尾：约好明天去码头/)
+    assert.match((await cmd(host, 'chats 2')).text, /没聊上/)
+    const no = await cmd(host, 'chats 9')
+    assert.equal(no.kind, 'error')
+    assert.match(no.text, /没有第 9 次/)
 
     // events: a photo and a message; the owner's day digest carries them with no money, her own history keeps the line
     await post('/mock/media', { kind: 'photo_done' })

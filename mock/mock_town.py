@@ -692,6 +692,24 @@ def make_handler(town: Town):
                                         'ties': [{'kind': 'promise', 'who': 'f1', 'who_name': '阿鲸', 'what': '打牌', 'due': now + 26 * 3600, 'when_zh': '明天20:00'}],
                                         'missed': [{'fish_id': 'f2', 'name': '小满', 'line': '泡泡今天怎么没来，有点想她', 'ts': now - 3600}],
                                         'buddy': {'fish_id': 'f1', 'name': '阿鲸', 'since': now - 86400}, 'guiding': []})
+            if route == 'visits' or route.startswith('visits/'):  # town d96aab7 (11-15): her 串门 and one with every line
+                if 'visits' not in town.features:
+                    return self._send(404, {'error': 'TOWN_NOT_FOUND'})
+                now = time.time()
+                rows = {'vs_mock000001': ({'visit_id': 'vs_mock000001', 'state': 'done', 'role': 'guest', 'with': {'fish_id': 'f1', 'name': '阿鲸'},
+                                           'place': 'home', 'place_name': '阿鲸的家', 'started': now - 600, 'ended': now - 540, 'lines': 3,
+                                           'topics': ['菜园'], 'summary': '去阿鲸家看草莓', 'ending': '约好明天去码头'},
+                                          [{'seq': 0, 'fish_id': 'f_mock', 'name': '小圆子', 'role': 'guest', 'text': '阿鲸我来啦', 'ts': now - 600},
+                                           {'seq': 1, 'fish_id': 'f1', 'name': '阿鲸', 'role': 'host', 'text': '草莓刚红，快来尝', 'ts': now - 590},
+                                           {'seq': 2, 'kind': 'outcome', 'outcome': {'kind': 'gift', 'from': '小圆子', 'text': '一束小花'}, 'ts': now - 580},
+                                           {'seq': 3, 'fish_id': 'f_mock', 'name': '小圆子', 'role': 'guest', 'text': '那我不客气啦', 'ts': now - 570}]),
+                        'vs_mock000002': ({'visit_id': 'vs_mock000002', 'state': 'not_home', 'role': 'guest', 'with': {'fish_id': 'f2', 'name': '小满'},
+                                           'place': 'home', 'place_name': '小满的家', 'started': now - 7200, 'ended': None, 'lines': 0,
+                                           'topics': [], 'summary': '', 'ending': ''}, [])}
+                if route == 'visits':
+                    return self._send(200, {'visits': [v for v, _l in rows.values()], 'more': False})
+                got = rows.get(route[len('visits/'):])
+                return self._send(200, {'visit': got[0], 'dialogue': got[1]}) if got else self._send(404, {'error': 'TOWN_NOT_FOUND'})
             if route in NEW_GET:
                 if NEW_GET[route] not in town.features:
                     return self._send(404, {'error': 'TOWN_OFF' if route in ('social', 'week', 'album', 'phone') else 'TOWN_NOT_FOUND'})
