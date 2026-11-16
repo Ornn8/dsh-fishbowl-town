@@ -95,7 +95,8 @@ test('0.7.10: what the town session chose is not her judgment; held kinds never 
   journal.held('在串门时请喝东西（热可可）')
   assert.equal(journal.heldSince(0).length, 1)
   const report = journal.report({ status: null, herName: '小鱼儿' })
-  assert.match(report, /这些选择也是那边挑的/)
+  assert.match(report, /那边自己拿主意时，去哪个馆、出哪张牌、答哪一题也是那边挑的/)
+  assert.match(report, /你自己也能定去哪、做什么.*fishbowl_town_go 写下你自己的打算（plan），插件马上请小镇让那边照着去做/)  // 0.7.13
   assert.match(report, /不算你的判断/)
   assert.match(report, /先停住、等你一句的事/)
   assert.match(report, /小镇那边想在串门时请喝东西（热可可），照你的规矩停住了，没办/)
