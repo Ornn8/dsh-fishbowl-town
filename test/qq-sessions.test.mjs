@@ -89,3 +89,14 @@ test('settings: also-sessions are kept clean (no duplicates, never the main one,
   const [old] = fishEntries({ code: 'fbo_y', reportSessionId: 'web' }, {}, {})
   assert.deepEqual(old.alsoSids, [])
 })
+
+
+test('0.8.1: typedRecently counts only what he typed in DSH lately, and only where she chats rather than codes', () => {
+  const { cl, say, reply } = link()
+  for (let i = 0; i < 3; i++) { say('web', '在吗' + i, WEB(i)); reply('web', '在呀') }
+  say('qq', '群友说话', { kind: 'user' })
+  assert.equal(cl.typedRecently('web', 3600_000), 3)
+  assert.equal(cl.typedRecently('qq', 3600_000), 0)
+  assert.equal(cl.typedRecently('web', 1), 0)
+  assert.equal(cl.typedRecently('nowhere', 3600_000), 0)
+})

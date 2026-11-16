@@ -213,6 +213,13 @@ test('0.6.6: the setup tool makes the chat it is called in her home, with the co
     s = (await host.http('/fishbowl-town/save', { method: 'POST', body: { addAlso: qq.sid } })).json
     assert.deepEqual(s.alsoSessions.map((x) => x.sid), [qq.sid])
     assert.match((await host.http('/fishbowl-town/save', { method: 'POST', body: { addAlso: 'forward' } })).json.message, /QQ 里跟她说一句/)
+    // 0.8.1 (owner 11-17 「分身」): he says 「小镇的事以后在这儿说」 in the QQ chat -> move=true: her home moves there, the old one stays as an also-session
+    const moved = await host.callTool(plugin.SETUP_TOOL, { move: true }, { sessionId: qq.sid })
+    assert.match(moved, /搬到这个会话了/)
+    s = (await host.http('/fishbowl-town/state')).json
+    assert.equal(s.fish[0].chatSid, qq.sid)
+    assert.deepEqual(s.alsoSessions.map((x) => x.sid), [other.sid])
+    assert.equal(s.townBrief, true)
   } finally {
     await host.dispose()
   }
