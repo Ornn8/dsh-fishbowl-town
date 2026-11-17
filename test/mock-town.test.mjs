@@ -374,7 +374,7 @@ test('her chat with him is found by itself, gets the town news, and her town cho
     const mind = await waitFor(() => seen.filter((x) => x.last.includes('该你自己拿主意')).pop()?.last, 30_000)
     assert.match(mind, /【你和主人最近的事】/)
     assert.match(mind, /没睡好|洗个澡|早点睡/)
-    assert.match(mind, /不要写进 note，不要说给镇上别的鱼听/)
+    assert.match(mind, /一件都不提，换个说法/)
     // a visit turn too
     await post('/mock/visit', { lines: 2 })
     await waitFor(async () => (await report()).visits.length === 1, 60_000)
