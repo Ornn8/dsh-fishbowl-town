@@ -129,9 +129,11 @@ test('a commissioned picture is fetched, saved and told', { timeout: 120_000 }, 
 test('her own decision: the plugin pulls an agency turn at start and her model answers it', { timeout: 120_000 }, async () => {
   await post('/mock/reset')
   const seen = []
-  const host = await startPlugin(scriptedModel({ seen }))
+  const host = await startPlugin(scriptedModel({ seen }), { decideInChat: false })   // the town-session path (备选): no main chat to ask
   try {
-    const d = await waitFor(async () => (await report()).decisions[0], 60_000)
+    const d = await waitFor(async () => (await report()).decisions.find((x) => !x.silent), 60_000)
+    // the previous test may leave its own start pull open; it expires into decisions as {silent} after the reset
+    // (decisions[0] was flaky): take the first decision that was really answered
     assert.equal(d.action, 'visit')
     assert.equal(d.next_wake, 12)
     assert.equal(d.note, '阿鲸在等我呢')
@@ -348,7 +350,8 @@ test('her chat knows what she decided in town, and 「去小镇」 carries his w
 test('her chat with him is found by itself, gets the town news, and her town choices remember him', { timeout: 150_000 }, async () => {
   await post('/mock/reset')
   const seen = []
-  const host = await startPlugin(scriptedModel({ seen }))
+  // 0.9.0: this one is about the town session's own decision turn (the backup mode); in the default mode he is talking, so it would wait for her chat
+  const host = await startPlugin(scriptedModel({ seen }), { decideInChat: false })
   const R = '/fishbowl-town'
   const state = async () => (await host.http(R + '/state')).json
   try {
