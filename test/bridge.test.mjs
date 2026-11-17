@@ -67,9 +67,11 @@ test('一局的经过：结果、她出的几手、说的话，不超过 150 字
   assert.equal(recapGame(null), '')
 })
 
-test('主聊天的「刚才在小镇」：最近两件经过跟在后面，旧的不再放', () => {
+// 0.8.4（主人 11-17「我要的是全部内容」）：没放过的每一件都跟在后面，按先后排
+test('主聊天的「刚才在小镇」：没放过的经过每一件都跟在后面（按先后），放过的不再放', () => {
   const recaps = [{ ts: 3000, kind: 'visit', text: '你去找阿鲸……' }, { ts: 2000, kind: 'game', text: '斗地主：赢了' }, { ts: 1000, kind: 'game', text: '更早的一局' }]
-  assert.deepEqual(recapLines(recaps, 1500), ['经过（你刚才在小镇的原话和结果）：', '- 串门：你去找阿鲸……', '- 牌局：斗地主：赢了'])
+  assert.deepEqual(recapLines(recaps, 1500), ['经过（你刚才在小镇的原话和结果）：', '- 牌局：斗地主：赢了', '- 串门：你去找阿鲸……'])
+  assert.equal(recapLines(recaps, 0).length, 4)
   assert.deepEqual(recapLines(recaps, 5000), [])
   const out = renderFresh([], 1500, { recaps })
   assert.ok(out.includes('- 串门：你去找阿鲸……') && !out.includes('更早的一局') && out.includes('都是你的'))

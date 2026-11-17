@@ -167,7 +167,7 @@ test('0.7.6: between his returns, what just happened in town (a game, a photo) i
   const fresh = await run('s1')
   assert.equal(fresh.messages.length, 2)
   const text = fresh.messages[1].content[0].text
-  assert.match(text, /你刚才在小镇：\n- 和阿鲸打斗地主：赢了/)
+  assert.match(text, /你刚才在小镇：\n- \d\d:\d\d 和阿鲸打斗地主：赢了/)       // 0.8.4: each line carries its time
   assert.doesNotMatch(text, /小满说/)                                       // only the new thing, not the whole note again
   t += 11 * 60_000
   assert.equal((await run('s1')).messages.length, 1)                       // nothing new since: nothing added
