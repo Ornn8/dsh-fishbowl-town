@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events'
 // 0.5.2: sessions also carry what the plugin's session guard reads in real DSH: session.header {id, cwd, agentPreset},
 // session.seq + session.eventAt(seq) over the event log (user/message with its source, assistant/message with usage).
 // The model may answer a string or { text, usage }. `hijack(request)` makes create() hand back another session id (a broken host).
-export function createFakeHost({ model, latencyMs = 50, hijack = null } = {}) {
+export function createFakeHost({ model, latencyMs = 50, hijack = null, runtimeContext = null } = {}) {
   const listeners = new Map()
   const disposers = []
   const variables = new Map()
@@ -77,6 +77,13 @@ export function createFakeHost({ model, latencyMs = 50, hijack = null } = {}) {
         s.messages.push({ role: 'user', text: message.content.map((b) => b.text).join('') })
         s.log.push({ type: 'user/message', data: message })
         emit('session/event', agent.session, { type: 'user/message', data: message }) // DSH 0.2.1 shape: the event data is the message itself
+        // 0.9.1: real DSH (dsh-agent-loop step()) appends its runtime-context snapshot as ANOTHER user/message right after the
+        // turn's message when the context changed (the town's own 「小镇近况」 section changes nearly every time)
+        if (runtimeContext) {
+          const ctxMsg = { id: 'ctx-' + (++seq), role: 'user', content: [{ type: 'text', text: runtimeContext(sid) }], source: { kind: 'runtime-context' } }
+          s.log.push({ type: 'user/message', data: ctxMsg })
+          emit('session/event', agent.session, { type: 'user/message', data: ctxMsg })
+        }
         const system = renderSystem(s.preset)
         let text
         let usage = null
