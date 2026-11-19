@@ -596,14 +596,14 @@ test('0.7.10: a held treat never reaches the town — the town session is asked 
   }
 })
 
-// 0.8.0「在聊天里拿主意」：he is quiet -> the plugin asks HER in their chat; her 【小镇打算】 line is her own plan; the next decision follows it
-test('decide in chat: the plugin asks her in his chat, she says her plan to him, and the next decision turn goes and does it', { timeout: 120_000 }, async () => {
+// 0.9.2 (owner 11-19 「这玩意在对话里逐条报影响用户体验」): the ask is her own quiet think in a plugin session; his chat never sees it
+test('decide quietly: the plugin asks her outside his chat (with their recent words), his chat stays clean, and the next decision turn does her plan', { timeout: 120_000 }, async () => {
   await post('/mock/reset')
   const seen = []
   const base = scriptedModel({ seen })
   const model = async (args) => {
     const last = args.history[args.history.length - 1].text
-    if (args.title === '和小圆子聊天' && last.includes('【鱼缸小镇插件 · 问你】')) {
+    if (last.includes('【鱼缸小镇插件 · 问你】')) {
       seen.push({ title: args.title, system: args.system, last })
       return '我想去码头泡一会儿，晒晒太阳～\n【小镇打算】去码头泡一会儿'
     }
@@ -613,22 +613,24 @@ test('decide in chat: the plugin asks her in his chat, she says her plan to him,
   try {
     const chat = await host.ownerChat('和小圆子聊天')
     await chat.say('我去写作业啦')                                  // binds her chat (the first chat he types in)
-    // the decision turn the plugin asks for at start (the mock sends it without reasons: an ordinary one) goes to her chat
     await waitFor(async () => (await report()).decisions.length >= 1, 60_000)
     const d = (await report()).decisions[0]
     assert.equal(d.action, 'none')
     assert.equal(d.next_wake, 8)
-    const asked = await waitFor(() => seen.find((x) => x.title === '和小圆子聊天' && x.last.includes('【鱼缸小镇插件 · 问你】')), 30_000)
-    assert.match(asked.last, /这条是插件发的，不是主人说的话/)
+    const asked = await waitFor(() => seen.find((x) => x.last.includes('【鱼缸小镇插件 · 问你】')), 30_000)
+    assert.notEqual(asked.title, '和小圆子聊天')
+    assert.match(asked.last, /不发给他，也不会出现在你们的聊天里/)
+    assert.match(asked.last, /我去写作业啦/)
     const s = host.sessions.get(chat.sid)
-    await waitFor(() => s.messages.some((m) => m.role === 'assistant' && m.text.includes('【小镇打算】去码头泡一会儿')), 30_000)
+    assert.ok(!s.messages.some((m) => /鱼缸小镇插件 · 问你|小镇打算/.test(m.text || '')), 'nothing about her town plan in his chat')
     // the next decision turn is the town session, told this is her own plan
     await sleep(500)
     const n2 = (await report()).decisions.length
     await post('/mock/agency', { reasons: ['idle'] })
     await waitFor(async () => (await report()).decisions.length > n2, 60_000)
     const mind = seen.filter((x) => x.last.includes('该你自己拿主意')).pop()
-    assert.match(mind.last, /【你刚才在聊天里跟主人说你想】\n「去码头泡一会儿」——这是你自己说的打算，现在就照着去做/)
+    assert.match(mind.last, /【你自己定的打算】\n「去码头泡一会儿」——这是你自己定的打算，现在就照着去做/)
+    assert.ok(!s.messages.some((m) => /小镇打算/.test(m.text || '')))
   } finally {
     await host.dispose()
   }

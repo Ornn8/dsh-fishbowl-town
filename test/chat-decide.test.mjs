@@ -15,8 +15,8 @@ function world({ idleMs = 10 * 60_000, reply = `好呀，我想去码头泡一�
   const state = {}
   const journal = createJournal({ state })
   const asked = []
-  const brain = { async askOwnerChat(text) { asked.push(text); return reply } }
-  const chatLink = { mainChat: () => ({ sid: 'main-1', how: 'bound' }), ownerIdleMs: () => idleMs }
+  const brain = { async ask(slot, text) { asked.push(text); brain.slots.push(slot); return reply }, slots: [] }
+  const chatLink = { mainChat: () => ({ sid: 'main-1', how: 'bound' }), ownerIdleMs: () => idleMs, ownerLife: () => ['主人（5 分钟前）：今天好累，想吃面'] }
   const config = {}
   const decide = createChatDecide({ brain, chatLink, journal, log, config, state })
   return { state, journal, asked, brain, chatLink, config, decide }
@@ -30,17 +30,21 @@ test('her plan line is read from her reply; the ask says it is the plugin and sh
   assert.match(ask, /插件发的，不是主人说的话/)
   assert.match(ask, /码头上有人在泡水/)
   assert.match(ask, /最后单独一行写「【小镇打算】你要做的事」/)
+  assert.match(ask, /不发给他，也不会出现在你们的聊天里/)
+  assert.match(buildAsk(agencyTurn('y'), ['主人（1 分钟前）：想吃面']), /你和主人最近的事[^\n]*\n主人（1 分钟前）：想吃面/)
 })
 
-test('a decision turn goes to her chat when he is quiet; her plan becomes her own wish; the next turn is the town session following it', async () => {
+test('0.9.2 a decision turn is her own quiet think (never his chat), with their recent chat; her plan becomes her own wish; the next turn is the town session following it', async () => {
   const w = world()
   const first = w.decide.take(agencyTurn('a1'))
   assert.deepEqual(JSON.parse(first), { action: 'none', next_wake: 8, note: '在聊天里想想接下来去哪' })
   for (let i = 0; i < 20 && w.decide.busy; i++) await sleep(5)
   assert.equal(w.asked.length, 1)
+  assert.deepEqual(w.brain.slots, ['agency'])
+  assert.match(w.asked[0], /今天好累，想吃面/)
   assert.equal(w.journal.pendingWish(), '去码头泡一会儿')
   assert.equal(w.journal.wishIsOwn(), true)
-  assert.match(w.journal.report(), /你在聊天里定了小镇的打算：「去码头泡一会儿」/)
+  assert.match(w.journal.report(), /你定了小镇的打算：「去码头泡一会儿」/)
   // the next decision turn: her plan is waiting -> the town session carries it out
   assert.equal(w.decide.take(agencyTurn('a2')), null)
   assert.deepEqual(w.decide.route(agencyTurn('a3')), { role: 'execute' })
@@ -71,7 +75,7 @@ test('0.9.0 he is away: ask once, then wait decideEveryMinutes without calling t
   const journal = createJournal({ state, now: () => t })
   const asked = []
   let reply = '嗯'
-  const brain = { async askOwnerChat(text) { asked.push(text); return reply } }
+  const brain = { async ask(_slot, text) { asked.push(text); return reply } }
   const chatLink = { mainChat: () => ({ sid: 'main-1' }), ownerIdleMs: () => 10 * 60_000 }
   const notes = []
   const diary = { note: (text, tag) => notes.push([tag, text]) }
@@ -107,40 +111,30 @@ test('0.9.0 he is away: ask once, then wait decideEveryMinutes without calling t
   assert.deepEqual(d.route(agencyTurn('d6')), { role: 'execute' })
 })
 
-test('0.9.0 he is talking: the ask rides on his next words (no extra call), her reply\'s plan line is read', async () => {
+test('0.9.2 he is talking: nothing rides on his words (owner 11-19 「逐条报影响用户体验」); she still thinks quietly at the interval', async () => {
   let t = 1_800_000_000_000
   const state = {}
   const journal = createJournal({ state, now: () => t })
-  let idle = 30_000
-  let release
-  const watched = []
+  const asked = []
   const brain = {
-    async askOwnerChat() { throw new Error('no followup while he is talking') },
-    watchReply(sid) { watched.push(sid); return new Promise((r) => { release = r }) },
+    async ask(_slot, text) { asked.push(text); return `嗯
+${PLAN_MARK}去找阿鲸串门` },
+    async askOwnerChat() { throw new Error('never in his chat') },
+    watchReply() { throw new Error('never watches his chat') },
   }
-  const chatLink = { mainChat: () => ({ sid: 'main-1' }), ownerIdleMs: () => idle }
+  const chatLink = { mainChat: () => ({ sid: 'main-1' }), ownerIdleMs: () => 30_000 }
   const d = createChatDecide({ brain, chatLink, journal, log, config: {}, state, now: () => t })
   const a = JSON.parse(d.route(agencyTurn('e1')).answer)
-  assert.equal(a.next_wake, 5)
-  assert.equal(d.pendingNote('other'), '')
-  const note = d.pendingNote('main-1')
-  assert.match(note, /【小镇在等你定】/)
-  assert.match(note, /先好好回他的话/)
-  assert.match(note, /码头上有人在泡水/)
+  assert.equal(a.note, NOTE_ASKING)
+  assert.equal(d.pendingNote('main-1'), '')
   d.noteSent('main-1')
-  assert.equal(d.pendingNote('main-1'), '', 'once')
-  assert.deepEqual(watched, ['main-1'])
-  assert.equal(JSON.parse(d.route(agencyTurn('e2')).answer).note, NOTE_ASKING, 'still waiting for her reply')
-  release(`哈哈好呀，那我们晚点聊～\n${PLAN_MARK}去找阿鲸串门`)
   for (let i = 0; i < 20 && d.busy; i++) await sleep(5)
+  assert.equal(asked.length, 1)
   assert.equal(journal.pendingWish(), '去找阿鲸串门')
-  assert.equal(journal.wishIsOwn(), true)
-  // after she planned: within 30 minutes of the last ask, his talking does not bring another ask
   journal.decision({ action: 'visit' })
   t += 10 * 60_000
   assert.equal(JSON.parse(d.route(agencyTurn('e3')).answer).note, NOTE_WAITING)
-  assert.equal(d.pendingNote('main-1'), '')
-  idle = 10 * 60_000
+  assert.equal(asked.length, 1)
 })
 
 test('0.9.0 town-context: the waiting ask is appended to his note and marked sent', async () => {
@@ -158,7 +152,7 @@ test('0.9.0 town-context: the waiting ask is appended to his note and marked sen
 test('0.9.0 prompts: execute keeps to her plan; rules answers only the urgent thing', async () => {
   const { buildTurnPrompt } = await import('../lib/prompt.js')
   const ex = buildTurnPrompt(agencyTurn('p1'), { wish: '先去码头，晚上八点报名斗地主', wishOwn: true, role: 'execute' })
-  assert.match(ex, /照你在聊天里定的去做/)
+  assert.match(ex, /照你定的去做/)
   assert.match(ex, /不要换成别的事/)
   assert.match(ex, /办不了：原因/)
   const ru = buildTurnPrompt(agencyTurn('p2', ['invited']), { role: 'rules', rules: { text: '朋友约我都去' } })
@@ -184,8 +178,9 @@ test('the runner answers the town at once with a short wait and never calls the 
     async answer(id, body) { posted.push([id, body]); return { ok: true } },
     async events() { return { next: 1, items: [] } },
   }
-  let townCalls = 0
-  const brain = { async ask() { townCalls++; return '{"action":"none"}' }, askOwnerChat: w.brain.askOwnerChat }
+  const calls = []
+  const brain = { async ask(slot, text) { calls.push([slot, text]); return `好呀
+${PLAN_MARK}去码头泡一会儿` } }
   const decide = createChatDecide({ brain, chatLink: w.chatLink, journal: w.journal, log, config: {}, state: w.state })
   const runner = createRunner({ client, brain, log, journal: w.journal, chatDecide: decide, config: { eventsEveryMs: 60_000 } })
   runner.start()
@@ -193,8 +188,9 @@ test('the runner answers the town at once with a short wait and never calls the 
     for (let i = 0; i < 50 && !posted.length; i++) await sleep(50)
     assert.equal(posted.length, 1)
     assert.deepEqual(JSON.parse(posted[0][1]), { action: 'none', next_wake: 8, note: '在聊天里想想接下来去哪' })
-    assert.equal(townCalls, 0)
     for (let i = 0; i < 20 && decide.busy; i++) await sleep(10)
+    assert.equal(calls.length, 1, 'only her quiet think; the turn itself was answered at once')
+    assert.match(calls[0][1], /不发给他/)
     assert.equal(w.journal.pendingWish(), '去码头泡一会儿')
   } finally {
     await runner.stop()
@@ -217,14 +213,14 @@ test('0.9.0 runner: with her plan waiting the town session gets the execute prom
     async answer(id, body) { posted.push([id, body]); return { ok: true } },
     async events() { return { next: 1, items: [] } },
   }
-  const brain = { async ask(_slot, prompt) { prompts.push(prompt); return '{"action":"pier","note":"晒太阳","plan":{"hours":1,"doing":"码头泡着"}}' }, askOwnerChat: w.brain.askOwnerChat }
+  const brain = { async ask(_slot, prompt) { prompts.push(prompt); return '{"action":"pier","note":"晒太阳","plan":{"hours":1,"doing":"码头泡着"}}' } }
   const decide = createChatDecide({ brain, chatLink: w.chatLink, journal: w.journal, log, config: {}, state: w.state })
   const runner = createRunner({ client, brain, log, journal: w.journal, chatDecide: decide, config: { eventsEveryMs: 60_000 } })
   runner.start()
   try {
     for (let i = 0; i < 50 && !posted.length; i++) await sleep(50)
     assert.equal(posted.length, 1)
-    assert.match(prompts[0], /照你在聊天里定的去做/)
+    assert.match(prompts[0], /照你定的去做/)
     const a = JSON.parse(posted[0][1])
     assert.equal(a.action, 'pier')
     assert.equal(a.note, '照你在聊天里定的：晒太阳')

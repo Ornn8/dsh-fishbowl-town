@@ -58,7 +58,7 @@ test('replyTextOf ignores tool-call messages', () => {
 test('her own plan from the owner chat reaches her town decisions and visits (0.7.3)', () => {
   const agency = { turn_id: 'ot_2', kind: 'agency', packet: { as: '林蓝', actions: ['none', 'make'], messages: [{ role: 'user', content: '情况' }], reply: { format: 'json' } } }
   const own = buildTurnPrompt(agency, { wish: '去面包房烤个面包', wishOwn: true })
-  assert.match(own, /你刚才在聊天里跟主人说你想/)
+  assert.match(own, /你自己定的打算/)
   assert.doesNotMatch(own, /主人刚才在聊天里跟你说/)
   assert.match(buildTurnPrompt(agency, { wish: '去打两把海龟汤' }), /主人刚才在聊天里跟你说/)
   const visit = { turn_id: 'ot_3', kind: 'visit', packet: { as: '林蓝', messages: [{ role: 'user', content: '她来串门了' }], reply: { format: 'json' } } }
