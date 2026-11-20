@@ -152,11 +152,11 @@ test('a NEW town: page data, album files you can see and hear, budget, look, com
     assert.equal(f.phone, true)
     assert.equal((await report()).social_calls.length, 0, 'probing the town spends nothing')
 
-    // the decision turn: the town's social block is in her prompt with the plugin's note; her answer carries the side fields untouched
+    // the decision turn: the town's social block is in her prompt with the plugin's note; her answer carries the side fields untouched (phone sends excepted, 0.9.4)
     await post('/mock/agency', { social: true, reasons: ['meet_ask'] })
     const d = await waitFor(async () => (await report()).decisions[1], 60_000)
     assert.equal(d.raw.gift.item, '一束小花')
-    assert.equal(d.raw.phone[0].text, '好呀，晚上见')
+    assert.equal(d.raw.phone, undefined, '0.9.4: a phone send in a decision waits for her main chat (owner 11-21 「改成主聊天写」)')
     const asked = seen.filter((x) => x.title === '鱼缸小镇 · 心思').at(-1)
     assert.ok(asked.last.includes(SOCIAL_NOTE), 'the decision prompt carries the plugin note')
     assert.match(asked.last, /"社交"/)
