@@ -249,3 +249,12 @@ test('0.9.0 brain.watchReply: her reply of the turn running in his chat comes ba
   const { rmSync } = await import('node:fs')
   rmSync(join(stateDir, '..'), { recursive: true, force: true })
 })
+
+test('0.9.3 visit target: a real id or her name, never the placeholder (11-19 小馋鱼 「目标不对」)', async () => {
+  const { buildTurnPrompt } = await import('../lib/prompt.js')
+  for (const role of ['execute', undefined]) {
+    const text = buildTurnPrompt(agencyTurn('v1'), { wish: '去找鱼圆串门', wishOwn: true, role })
+    assert.doesNotMatch(text, /"target": "fish_id"/)
+    assert.match(text, /名单里没有的鱼，直接写她的名字/)
+  }
+})
