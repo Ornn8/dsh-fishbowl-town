@@ -420,6 +420,7 @@ test('activity turns are hers; 夸夸群 and heart consent go through her owner'
   try {
     await waitFor(async () => (await report()).decisions.length === 1) // connected, her first decision
     assert.equal((await report()).activity_ok, true, 'every poll carries kinds=activity')
+    assert.equal((await report()).build_ok, true, '0.9.7: and build (鱼缸岛的建模回合)')
     await post('/mock/activity', { purpose: 'pier' })
     const act = await waitFor(async () => (await report()).activities[0], 30_000)
     assert.deepEqual(act.answer, { text: '哈，钓到一条小黄鱼！', feeling: '开心' })
