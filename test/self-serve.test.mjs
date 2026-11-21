@@ -81,7 +81,7 @@ test('owner commands: /town tables | play | cancel | visit | go | help, journall
   assert.match((await runTownCommand('visit 小满', { selfServe: ss, status })).text, /小满/)
   assert.match((await runTownCommand('go 电玩城 play', { selfServe: ss, status })).text, /到电玩城了/)
   assert.equal((await runTownCommand('play', { selfServe: ss, status })).kind, 'error')
-  assert.match((await runTownCommand('', { selfServe: ss, status })).text, /\/town play/)
+  assert.match((await runTownCommand('', { selfServe: ss, status })).text, /\/town tables[\s\S]*由她自己定/) // 0.9.6：帮助里不再有替她 play / visit / go，命令照旧能用
   assert.ok(jr.j.every((e) => e.text.startsWith('主人让你')))
   const acts = calls.filter((c) => c[0] !== 'lobby')
   assert.deepEqual(acts.map((c) => c[0]), ['play', 'play', 'cancel', 'visit', 'goto'])
@@ -100,7 +100,7 @@ test('town errors and off duty become plain words, never throw', async () => {
   assert.match(failText(new TownError('TOWN_ALREADY_SIGNED', 409, 's1')), /同一时间只能报一个/)
   assert.match(failText(new TownError('TOWN_SEATED', 409)), /正在桌上或正在串门/)
   const ss = createSelfServe({ live: fakeLive([], { lobby: async () => { throw new TownError('HTTP_404', 404) } }), journal: journal() })
-  assert.match(await ss.look(), /还没开放/)
+  assert.match(await ss.look(), /没开放|关门了/) // 0.9.6：老镇那一块关了（old-town.js）
   const off = createSelfServe({ live: () => null, journal: journal() })
   assert.match(await off.play('狼人杀'), /没在小镇值班/)
 })

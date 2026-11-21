@@ -101,7 +101,7 @@ test('0.7.10: what the town session chose is not her judgment; held kinds never 
   assert.equal(journal.heldSince(0).length, 1)
   const report = journal.report({ status: null, herName: '小鱼儿' })
   assert.match(report, /那边答得快，有时和你在这儿想的不一样/)                                     // 0.8.1：是她，只是答得快
-  assert.match(report, /你自己也能定去哪、做什么.*fishbowl_town_go 写下你自己的打算（plan），插件马上请小镇让那边照着去做/)  // 0.7.13
+  assert.match(report, /去哪、做什么由你自己定.*fishbowl_town_go 写下你的打算（plan），插件马上请那边照着去做/)  // 0.7.13；0.9.6 岛上
   assert.doesNotMatch(report, /不算你的判断/)
   assert.match(report, /先停住、等你一句的事/)
   assert.match(report, /小镇那边想在串门时请喝东西（热可可），照你的规矩停住了，没办/)
