@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createSelfServe, createSelfTools, runTownCommand, pickGame, pickFish, pickPlace, renderLobby, failText } from '../lib/self-serve.js'
 import { CHAT_TOOL_NAMES } from '../lib/chat-tools.js'
 import { TownError } from '../lib/town-client.js'
+import { GUIDE_STEPS, GUIDE_TITLE, guideText } from '../lib/guide.js'
 
 // the town's final shape (self-serve lobby, 2026-11-13)
 const LOBBY = {
@@ -164,6 +165,20 @@ test('0.3.3 /town history: her last things in the owner voice, failures too', as
   assert.equal(res.kind, 'success')
   assert.match(res.text, /主人让她开了一桌狼人杀/)
   assert.match((await runTownCommand('help', { selfServe: ss, status: async () => '' })).text, /\/town history/)
+})
+
+test('0.9.3: /town help opens with the 新手引导, /town guide is the guide alone', async () => {
+  const ss = createSelfServe({ live: () => null })
+  const help = (await runTownCommand('help', { selfServe: ss, status: async () => '' })).text
+  assert.ok(help.startsWith(GUIDE_TITLE))
+  assert.match(help, /^新手引导：大家一起建鱼缸岛/)              // 主人 11-19：这一版先讲一起建岛、怎么加新玩法
+  assert.match(help, /加一种新玩法/)
+  assert.match(help, /去鱼缸岛承包一栋楼，开间夜里的旧书铺/)    // 11-19 晚：例子不再是早点铺（沙盒里一半的鱼都开早点铺）
+  assert.match(help, /全部命令：\n\/town tables/)
+  const guide = await runTownCommand('guide', { selfServe: ss, status: async () => '' })
+  assert.equal(guide.kind, 'success')
+  assert.equal(guide.text, guideText())
+  assert.equal(guide.text.split('\n').length, GUIDE_STEPS.length + 1)
 })
 
 test('0.6.9: the lobby names each fish with the town\'s labels (hudie 11-15: only 朋友 / 镇民 showed)', async () => {
