@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createSelfServe, createSelfTools, runTownCommand, pickGame, pickFish, pickPlace, renderLobby, failText } from '../lib/self-serve.js'
+import { createSelfServe, createSelfTools, runTownCommand, pickGame, pickFish, pickPlace, renderLobby, failText, OWNER_DECIDES } from '../lib/self-serve.js'
 import { CHAT_TOOL_NAMES } from '../lib/chat-tools.js'
 import { TownError } from '../lib/town-client.js'
 import { GUIDE_STEPS, GUIDE_TITLE, guideText } from '../lib/guide.js'
@@ -69,24 +69,21 @@ test('her tools: open a werewolf table, visit 阿鲸, fish at the pier; journall
   assert.match(await tools.fishbowl_town_look.execute({}), /等人的桌子/)
 })
 
-test('owner commands: /town tables | play | cancel | visit | go | help, journalled as the owner asking', async () => {
+test('owner commands: /town tables and help work; play | cancel | visit | go never move her (0.9.6 「主人不能操控自己鱼」)', async () => {
   const calls = []
   const jr = journal()
   const ss = createSelfServe({ live: fakeLive(calls), journal: jr })
   const status = async () => '小圆子 在小镇：in_town'
   assert.match((await runTownCommand('tables', { selfServe: ss, status })).text, /v_boardgame_ww/)
-  assert.match((await runTownCommand('play v_boardgame_ww', { selfServe: ss, status })).text, /坐进 \[v_boardgame_ww\]/)
-  assert.match((await runTownCommand('play 海龟汤 换', { selfServe: ss, status })).text, /开了一桌海龟汤/)
-  assert.match((await runTownCommand('cancel', { selfServe: ss, status })).text, /取消/)
-  assert.match((await runTownCommand('visit 小满', { selfServe: ss, status })).text, /小满/)
-  assert.match((await runTownCommand('go 电玩城 play', { selfServe: ss, status })).text, /到电玩城了/)
-  assert.equal((await runTownCommand('play', { selfServe: ss, status })).kind, 'error')
-  assert.match((await runTownCommand('', { selfServe: ss, status })).text, /\/town tables[\s\S]*由她自己定/) // 0.9.6：帮助里不再有替她 play / visit / go，命令照旧能用
-  assert.ok(jr.j.every((e) => e.text.startsWith('主人让你')))
-  const acts = calls.filter((c) => c[0] !== 'lobby')
-  assert.deepEqual(acts.map((c) => c[0]), ['play', 'play', 'cancel', 'visit', 'goto'])
-  assert.deepEqual(acts[1][1], { game: 'soup', replace: true })
-  assert.deepEqual(acts[4][1], { place: 'arcade', do: 'play' })
+  for (const c of ['play v_boardgame_ww', 'play 海龟汤 换', 'play', 'cancel', 'visit 小满', 'visit', 'go 电玩城 play', '去 码头', '串门 小满', '取消']) {
+    const r = await runTownCommand(c, { selfServe: ss, status })
+    assert.equal(r.kind, 'success', c)
+    assert.equal(r.text, OWNER_DECIDES, c)
+  }
+  assert.match(OWNER_DECIDES, /由她自己定.*聊天里跟她说/)
+  assert.match((await runTownCommand('', { selfServe: ss, status })).text, /\/town tables[\s\S]*由她自己定/)
+  assert.deepEqual(calls.filter((c) => c[0] !== 'lobby'), []) // 一样都没替她办
+  assert.deepEqual(jr.j, [])
 })
 
 test('a fish not in the lobby is still looked up by name (the town knows friends and 镇民)', async () => {
@@ -116,7 +113,7 @@ test('balance too low: the owner gets the top-up link, she never does', async ()
   assert.match(failText(new TownError('HTTP_402', 402), { owner: true }), /充值/)
   const ss = createSelfServe({ live: fakeLive([], { play: async () => { throw short } }), journal: journal() })
   assert.doesNotMatch(await ss.play('狼人杀', 'her'), /充值|afdian/)
-  assert.match((await runTownCommand('play 狼人杀', { selfServe: ss, status: async () => '' })).text, /afdian/)
+  assert.match(await ss.play('狼人杀', 'owner'), /afdian/)
 })
 
 test('0.3.3 receipts: every self-serve action ends with 成了/没成, the reason, where she is now, and the piggy number', async () => {

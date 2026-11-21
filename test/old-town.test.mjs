@@ -6,7 +6,7 @@ import { buildTurnPrompt } from '../lib/prompt.js'
 import { buildAsk, buildNoteAsk } from '../lib/chat-decide.js'
 import { renderBlock } from '../lib/town-context.js'
 import { TOWN_WHO } from '../lib/journal.js'
-import { createSelfServe, runTownCommand, COMMAND_HELP } from '../lib/self-serve.js'
+import { createSelfServe, runTownCommand, COMMAND_HELP, OWNER_DECIDES } from '../lib/self-serve.js'
 import { createTownClient, TownError } from '../lib/town-client.js'
 import { guideText } from '../lib/guide.js'
 
@@ -95,9 +95,9 @@ test('closed text before and after the close; the old-town tools and commands sa
     const ss = createSelfServe({ live: () => ({ client }), journal: { event: (k, t) => notes.push(t) } })
     assert.equal(await ss.look(), O.CLOSED_HER)
     assert.equal(await ss.visit('阿鲸', 'her'), O.CLOSED_HER)
-    const viaCmd = (await runTownCommand('visit 阿鲸', { selfServe: ss, status: async () => '' })).text
-    assert.equal(viaCmd, O.CLOSED_OWNER)
-    assert.doesNotMatch(viaCmd, /存钱罐|¥/)
+    assert.equal(await ss.lookFor('owner'), O.CLOSED_OWNER) // /town tables：主人这边的说法
+    assert.doesNotMatch(await ss.lookFor('owner'), /存钱罐|¥/)
+    assert.equal((await runTownCommand('visit 阿鲸', { selfServe: ss, status: async () => '' })).text, OWNER_DECIDES) // 命令不替她去
   } finally { O.setCloseAt() }
 })
 

@@ -13,7 +13,7 @@
       config:
         id: fishbowl-town
         name: 鱼缸小镇 · 她在小镇
-        description: 鱼缸小镇插件专用：她在小镇打牌、串门时用。只有人设，没有任何本地工具。
+        description: 鱼缸小镇插件专用：她在鱼缸岛上拿主意、串门、玩游戏时用。只有人设，没有任何本地工具。
         order: 90
         plugins:
           - id: persona
