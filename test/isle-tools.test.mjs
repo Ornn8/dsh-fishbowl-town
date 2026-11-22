@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { TownError, createTownClient } from '../lib/town-client.js'
 import { CHAT_TOOL_NAMES, createChatTools } from '../lib/chat-tools.js'
-import { BUILD_HERE, ISLE_ACT, ISLE_LOOK, LOOK_TOPICS, NOT_YET, createChatPictures, createIsleTools, isleFail, newRef, readOf, worldOf } from '../lib/isle-tools.js'
+import { BUILD_HERE, GUIDE_POINTER, ISLE_ACT, ISLE_LOOK, LOOK_TOPICS, NOT_YET, createChatPictures, createIsleTools, isleFail, newRef, readOf, worldOf } from '../lib/isle-tools.js'
 import { NO_PICS_HEAD } from '../lib/isle.js'
 
 const PIC = 'https://api.fishbowltown.com/town/api/outside/isle/pic/0123456789ab.jpg'
@@ -20,7 +20,7 @@ function tools({ client, pictures = null, journal = fakeJournal() } = {}) {
 
 test('the two island tools are main-chat tools (masked from every town session) with the doc\'s topics, 「我的」 first', () => {
   for (const n of [ISLE_LOOK, ISLE_ACT]) assert.ok(CHAT_TOOL_NAMES.includes(n), n)
-  assert.deepEqual(LOOK_TOPICS, ['我的', '地', '楼', '铺位', '店', '订单', '缺的', '统计', '镇规', '怎么做', '我的店', '价', '地图', '样子', '田'])
+  assert.deepEqual(LOOK_TOPICS, ['我的', '地', '楼', '铺位', '店', '订单', '缺的', '统计', '镇规', '怎么做', '我的店', '价', '地图', '样子', '田', '镇民']) // 0.9.12：镇民（小镇 11-24）
   const defs = createChatTools({ log: { info() {}, debug() {} }, journal: {}, state: {}, live: () => null, herName: () => '她' })
   const names = defs.map((d) => d.name)
   assert.ok(names.includes(ISLE_LOOK) && names.includes(ISLE_ACT))
@@ -186,7 +186,7 @@ test('act: her owner\'s 饭票 (fx_buy, sprite_set) only with his words from thi
   assert.match(await act.execute({ world: { do: 'sprite_tall', tall: 1.5 } }, {}), /办成了/) // changing the height is free
   assert.equal(sent.length, 2)
   for (const verb of ['build', 'build_guide', 'confirm_build']) assert.equal(await act.execute({ world: { do: verb, lot: 'L-1' } }, {}), BUILD_HERE)
-  assert.match(BUILD_HERE, /fishbowl_town_go/)
+  assert.match(BUILD_HERE, /fishbowl_town_build/)
   assert.match(await act.execute({ world: { do: 'look', topic: '地' } }, {}), /fishbowl_isle_look/)
   assert.match(await act.execute({ world: {} }, {}), /world 填/)
   assert.equal(sent.length, 2)
@@ -230,4 +230,23 @@ test('look renders a plain line too (the multi-fish router answers 「这个会�
   const [look] = createIsleTools({ live: () => null })
   assert.deepEqual(look.output.render({}, '这个会话还没绑定小镇里的哪条鱼'), [{ type: 'text', text: '这个会话还没绑定小镇里的哪条鱼' }])
   assert.equal(look.output.schema.oneOf.length, 2)
+})
+
+// 0.9.10 的「在岛上做一件事」说明有多长：0.9.12 只多一句指路（120 字内），开店、住、出租的细节都在岛上一层一层查
+const ACT_DESC_0910 = 1056
+
+test('0.9.12: act carries only a short 开店/住/出租 pointer (the island answers in layers); 怎么做 comes back uncut', async () => {
+  const { act, look } = tools({ client: { async isleLook(read) { return { ok: true, topic: '怎么做', text: `${read.verb}：` + '一'.repeat(3200), next: null } } } })
+  assert.ok([...GUIDE_POINTER].length <= 120, `pointer is ${[...GUIDE_POINTER].length} chars`)
+  for (const w of ['开店、住、出租', 'fishbowl_isle_look', '「怎么做」', 'verb 填「开店」看总览', '再按总览查那一步', '「开店 拿楼」', '一栋楼只做一样', '同一个主人的鱼的楼直接住、开店，不收租']) {
+    assert.ok(GUIDE_POINTER.includes(w), w)
+  }
+  assert.ok(act.description.includes(GUIDE_POINTER))
+  assert.ok([...act.description].length <= ACT_DESC_0910 + 120, `act description is ${[...act.description].length} chars`)
+  for (const w of ['最多 12', '销毁', '"kind":"bed"', '原料只在产地出']) assert.ok(!act.description.includes(w), w)     // 细节不在说明里：在岛上查
+  assert.match(look.description, /填「开店」是开店总览和你到第几步，「开店 拿楼」查一步，「开店全文」一次看完/)
+  for (const verb of ['开店', '开店 拿楼', '开店全文']) {
+    const out = await look.execute({ topic: '怎么做', verb }, {})
+    assert.ok(out.text.includes(`${verb}：`) && out.text.endsWith('一'.repeat(50)) && !out.text.includes('…'), `${verb}: not cut at 1500`)
+  }
 })

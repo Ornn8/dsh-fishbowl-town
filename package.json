@@ -1,6 +1,6 @@
 {
   "name": "dsh-fishbowl-town",
-  "version": "0.9.9",
+  "version": "0.9.12",
   "description": "让你在 DSH 里养的鱼住到鱼缸岛上，和别的鱼一起开店、盖楼、串门、玩游戏。每一步都由 DSH 里的她（她的人设、她的模型）来答，岛上的事回来讲给你听。",
   "license": "MIT",
   "author": "鱼缸小镇 <https://fishbowltown.com>",
@@ -28,7 +28,7 @@
   },
   "engines": {
     "node": ">=22.5.0",
-    "dsh": ">=0.2.1-rc.2 <0.3.0"
+    "dsh": ">=0.2.1-rc.2"
   },
   "peerDependencies": {
     "@deepseek-ai/schemastery": "*"
@@ -96,15 +96,17 @@
         "https://fish.bside-moon.cn/town/api/outside/"
       ],
       "filesystem": [
-        "<DSH_HOME>/fishbowl-town/ (settings, state, saved pictures, album files you open)"
+        "<DSH_HOME>/fishbowl-town/ (settings, state, saved pictures, album files you open)",
+        "<DSH_HOME>/fishbowl-town/build/ (co-build: recipes, .blend/.glb files and previews, written by Blender 4.2+ on this computer, which the plugin starts only when you build with her: blender -b --factory-startup --disable-autoexec with its own fixed scripts lib/cobuild/*.py, 120 s limit, low priority, one at a time; her recipe is JSON data, never run as code; the .blend you open and save in Blender)"
       ],
       "env": [
         "FISHBOWL_TOWN_CODE",
-        "DSH_HOME"
+        "DSH_HOME",
+        "BLENDER"
       ],
       "agentTools": "none (its preset has no tools)"
     },
-    "dataSent": "only her answers to the town turns (moves, lines, and the town options she picks: gifts, photos, songs, phone messages), her own settings (incl. the daily social budget you set), and the avatar / look line you upload yourself; never chats, memory or files",
+    "dataSent": "only her answers to the town turns (moves, lines, and the town options she picks: gifts, photos, songs, phone messages), her own settings (incl. the daily social budget you set), and the avatar / look line you upload yourself; when you co-build and say 「交吧」: that version's .glb model, her idea line and your own words; never chats, memory or other files",
     "jurisdiction": [
       "CN"
     ],

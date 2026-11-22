@@ -37,13 +37,21 @@ test('the page module loads, registers its slot, and the first render (nothing r
   assert.ok(mod.__test.Page(), 'Page renders with no data')
 })
 
-test('0.6.5: the page knows its own version and says so when DSH still runs an older plugin (installed, not restarted)', () => {
+test('0.6.5 / 0.9.12: the page says so when DSH still runs an older plugin (installed, not restarted); the version lives only in package.json', () => {
   const { mod } = load()
-  const { stale, CLIENT_VERSION } = mod.__test
-  assert.equal(CLIENT_VERSION, JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version, 'bump CLIENT_VERSION with package.json')
-  assert.equal(stale({ ok: true, version: CLIENT_VERSION }), '')
+  const { stale } = mod.__test
+  const v = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
+  assert.equal(stale({ ok: true, version: v, installed: v }), '')
+  assert.equal(stale({ ok: true, version: v, installed: null }), '')                                // package.json unreadable: say nothing
+  assert.match(stale({ ok: true, version: '0.9.11', installed: '0.9.12' }), /插件已经更新到 0\.9\.12，但 DSH 里跑的还是 0\.9\.11：重启 DSH 后才生效/)
   assert.match(stale({ ok: true, codeTail: '4f7A' }), /DSH 里跑的还是旧版：重启 DSH 后才生效/)          // 0.6.0 and before: no version at all
-  assert.match(stale({ ok: true, version: '0.6.4' }), /跑的还是 0\.6\.4/)
+  assert.match(stale({ ok: true, version: '0.6.4' }), /跑的还是 0\.6\.4/)                           // before 0.9.12: no installed field = an older back half
+  // 主人 11-23「现在好像版本号是写死的」：no plugin version literal in the code (User-Agent, /state, the page all read package.json)
+  for (const f of ['client.js', 'index.js', 'town-client.js', 'runner.js']) {
+    const src = readFileSync(join(ROOT, 'lib', f), 'utf8')
+    assert.doesNotMatch(src, /VERSION\s*=\s*['"`]\d+\.\d+/, f)
+    assert.ok(!src.includes(`'${v}'`), `${f} spells out ${v}`)
+  }
   assert.equal(stale({ ok: false, status: 0 }), '')                                               // unreachable is its own message
   assert.equal(stale(null), '')
 })

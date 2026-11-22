@@ -1,0 +1,2 @@
+# 0.9.10: the co-build Blender scripts ship byte for byte as the island has them (LF), whatever core.autocrlf says
+lib/cobuild/*.py text eol=lf

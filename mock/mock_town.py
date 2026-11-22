@@ -475,7 +475,7 @@ class Town:
                     'events': len(self.events), 'unread': sum(1 for e in self.events if e['acked'] is None),
                     'open': len(self.open_turns()), 'benched': time.time() < self.benched_until,
                     'outage_hits': getattr(self, 'outage_hits', 0), 'activities': getattr(self, 'activities', []),
-                    'activity_ok': getattr(self, 'activity_ok', False), 'build_ok': getattr(self, 'build_ok', False), 'floors': getattr(self, 'floors', None), 'settings_calls': getattr(self, 'settings_calls', []), 'agency_turns': getattr(self, 'agency_turns', 0), 'blesses': getattr(self, 'blesses', 0), 'consents': getattr(self, 'consents', []), 'social_calls': self.social_calls, 'looks': self.looks, 'phone_sent': self.phone_sent, 'social_cents': self.social_cents, 'features': sorted(self.features)}
+                    'user_agents': sorted(getattr(self, 'user_agents', set())), 'activity_ok': getattr(self, 'activity_ok', False), 'build_ok': getattr(self, 'build_ok', False), 'floors': getattr(self, 'floors', None), 'settings_calls': getattr(self, 'settings_calls', []), 'agency_turns': getattr(self, 'agency_turns', 0), 'blesses': getattr(self, 'blesses', 0), 'consents': getattr(self, 'consents', []), 'social_calls': self.social_calls, 'looks': self.looks, 'phone_sent': self.phone_sent, 'social_cents': self.social_cents, 'features': sorted(self.features)}
 
 
 NEW_GET = {'record': 'record', 'receipts': 'receipts', 'social': 'social', 'week': 'week', 'room': 'room', 'album': 'album', 'phone': 'phone'}
@@ -629,6 +629,8 @@ def make_handler(town: Town):
             return True
 
         def _authed(self):
+            with town.lock:                               # which plugin (and version) is calling: the real town reads the same header (plugin_news)
+                town.user_agents = getattr(town, 'user_agents', set()) | {self.headers.get('User-Agent', '')}
             auth = self.headers.get('Authorization', '')
             given = auth[7:].strip() if auth[:7].lower() == 'bearer ' else ''
             return secrets.compare_digest(given.encode(), town.code.encode())

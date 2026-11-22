@@ -100,7 +100,8 @@ test('island decision turns say how to build and where the guide is', () => {
   const isle = { turn_id: 'i', kind: 'agency', packet: { isle: { static: 'a1b2c3d4e5f6', within_s: 120 }, messages: [], reply: { format: 'json' } } }
   const text = buildTurnPrompt(isle, { secondsLeft: 110 })
   assert.ok(text.includes(ISLE_BUILD_NOTE))
-  assert.match(ISLE_BUILD_NOTE, /"do":"build","lot":"地号","idea"/)
+  assert.match(ISLE_BUILD_NOTE, /要和主人一起盖/) // 0.9.10：回合里不盖楼（岛上回 code cobuild），在主人的聊天里一起盖
+  assert.doesNotMatch(ISLE_BUILD_NOTE, /"do":"build","lot"/)
   assert.match(ISLE_BUILD_NOTE, /"verb":"建模"/)
   assert.ok(!buildTurnPrompt({ turn_id: 'p', kind: 'agency', packet: { messages: [], reply: { format: 'json' } } }, {}).includes(ISLE_BUILD_NOTE), 'not on the island: no build line')
 })

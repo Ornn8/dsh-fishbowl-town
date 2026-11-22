@@ -526,6 +526,11 @@ test('0.3.3 on an old town: her plan sets her rest, idle wakes and rests cost no
     // the page and /town history / status tell the owner (the old town has no spending: only the local count)
     const st = (await host.http('/fishbowl-town/state')).json
     assert.ok(st.schedule.next, 'next wake shown')
+    const { readFileSync: readPkg } = await import('node:fs')
+    const pkgVersion = JSON.parse(readPkg(join(ROOT, 'package.json'), 'utf8')).version   // 0.9.12: the one place the version is written
+    assert.equal(st.version, pkgVersion)
+    assert.equal(st.installed, pkgVersion)
+    assert.ok((await report()).user_agents.includes(`dsh-fishbowl-town/${pkgVersion}`), 'the town sees this version in the User-Agent')
     assert.equal(st.usage.today.calls, 2)
     assert.equal(st.usage.today.skipped, 1)
     assert.equal(st.spend == null, true)

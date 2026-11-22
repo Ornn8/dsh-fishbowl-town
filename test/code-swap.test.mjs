@@ -4,6 +4,7 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -36,7 +37,8 @@ test('another fish\'s code in her field is asked about; her own new code, an unk
   const dir = join(process.env.DSH_HOME, 'fishbowl-town')
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'settings.json'), JSON.stringify({ fish: [{ id: '1', code: OLD, base: api }] }))
-  writeFileSync(join(dir, 'state.json'), JSON.stringify({ herName: '灯', herFishId: 'f_deng' }))
+  // codeTag 对得上 OLD：不然她的值班一起来就当成换了一条鱼、把 herName 清掉，和下面的保存赛跑（机器忙的时候偶尔输）
+  writeFileSync(join(dir, 'state.json'), JSON.stringify({ herName: '灯', herFishId: 'f_deng', codeTag: createHash('sha256').update(OLD).digest('hex').slice(0, 12) }))
   const host = createFakeHost({ model: async () => '{}' })
   const plugin = await import('../lib/index.js?' + Math.random())
   plugin.apply(host.ctx, { eventsEverySeconds: 600 })
