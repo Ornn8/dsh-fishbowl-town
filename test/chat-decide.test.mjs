@@ -289,6 +289,27 @@ test("0.9.8 'wake': inside decideEveryMinutes the town session decides now (role
   assert.match(p, /你上次自己定的再拿主意的时间/)
 })
 
+test("0.9.9 'pulled' after 「去小镇」 (her words kept): the town session decides now (role pull), never 「等聊天里的她定」; the plugin's start pull still waits", async () => {
+  const start = world()
+  assert.ok(start.decide.route(agencyTurn('p0', ['pulled', 'table'])).answer, 'start pull, nothing kept: as before')
+  const w = world()
+  w.journal.wish('主人想让你去小镇玩', { own: false })
+  assert.deepEqual(w.decide.route(agencyTurn('p1', ['pulled', 'table'])), { role: 'pull' })
+  assert.deepEqual(w.decide.route(agencyTurn('p2', ['pulled', 'invited'])), { role: 'rules' }, 'urgent still first')
+  const own = world()
+  own.journal.wish('去镜湖边走走', { own: true })
+  assert.deepEqual(own.decide.route(agencyTurn('p3', ['pulled'])), { role: 'execute' }, 'her own plan: carried out')
+  assert.equal(w.asked.length, 0, 'no extra think in the plugin session')
+  const notes = []
+  const d = createChatDecide({ brain: w.brain, chatLink: w.chatLink, journal: w.journal, diary: { note: (text, tag) => notes.push([tag, text]) }, log, config: {}, state: w.state })
+  d.after('pull', { action: 'visit', target: '阿鲸', place: '面包房' })
+  assert.deepEqual(notes.at(-1), ['did', '你刚才说要去小镇，小镇那边照你的意思定了：去面包房找阿鲸串门'])
+  const { buildTurnPrompt } = await import('../lib/prompt.js')
+  const p = buildTurnPrompt(agencyTurn('p4', ['pulled']), { role: 'pull', wish: '主人想让你去小镇玩', wishOwn: false })
+  assert.match(p, /该你自己拿主意了 · 你刚说要去/)
+  assert.match(p, /主人想让你去小镇玩/)
+})
+
 test("0.9.8 runner: a 'wake' turn inside the interval goes to her model (never skipped as idle, never answered by the plugin)", { timeout: 20_000 }, async () => {
   const { createSchedule } = await import('../lib/schedule.js')
   const w = world()
