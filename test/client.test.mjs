@@ -165,3 +165,30 @@ test('0.6.7: a newer plugin on the mirror is shown on top of the page, with how 
   assert.match(text, /有新版本 0\.6\.8（你装的是 0\.6\.7）/)
   assert.match(text, /添加插件.*dsh-fishbowl-town-latest\.tgz.*重启一次 DSH.*这一版：更快/)
 })
+
+// 0.9.13（用户 11-23：想看心思那个会话得往下翻两百条）
+test('「她的心思」: a collapsible block like the other sections, newest first, short rows; an older back half shows nothing', () => {
+  const { mod } = load()
+  const { MindCard, mindRows } = mod.__test
+  assert.equal(MindCard({ rows: undefined }), null, 'an older back half (no mind on /state): no block')
+  const el = MindCard({ rows: [] })
+  assert.equal(el.type, 'details')
+  assert.match(text(el), /^她的心思　她最近 30 次拿的主意：为什么叫她、她定了什么、她说的那句$/)
+  assert.match(text(render(mindRows([]))), /她在「心思」会话里还没拿过主意/)
+  const ts = new Date(2026, 10, 23, 5, 30).getTime()
+  const rows = text(render(mindRows([
+    { ts, why: '有鱼邀请她', did: '去串门（阿鲸 · cafe），打算「和阿鲸喝咖啡」', line: '我来啦', rc: '没成：咖啡馆今天关门' },
+    { ts: ts - 60_000, why: '插件隔一阵请她想想接下来去哪、做什么', did: '定了打算「先歇着」', line: '', rc: '' },
+  ])))
+  assert.equal(rows, '11-23 05:30　有鱼邀请她 → 去串门（阿鲸 · cafe），打算「和阿鲸喝咖啡」　「我来啦」　（没成：咖啡馆今天关门）11-23 05:29　插件隔一阵请她想想接下来去哪、做什么 → 定了打算「先歇着」')
+})
+
+test('settings: 「置顶哪些会话」 with the six slots in Chinese and 「工作区放在侧边栏最上面」 (the stand-in React cannot fill /state, so the source is read)', () => {
+  const { mod } = load()
+  const src = readFileSync(join(ROOT, 'lib', 'client.js'), 'utf8')
+  assert.match(src, /const PIN_ZH = \{ agency: '心思', visit: '串门', game: '牌桌', activity: '日常', news: '见闻', build: '盖楼' \}/)
+  assert.match(src, /'置顶哪些会话'/)
+  assert.match(src, /'「鱼缸小镇」工作区放在侧边栏最上面'/)
+  assert.match(src, /st && Array\.isArray\(st\.pinSessions\) \? h\('div', \{ style: S\.row \}/, 'shown only when the back half sends pinSessions')
+  assert.ok(mod.__test.Page(), 'the page still renders before anything is read')
+})

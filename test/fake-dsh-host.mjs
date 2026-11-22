@@ -139,11 +139,38 @@ export function createFakeHost({ model, latencyMs = 50, hijack = null, runtimeCo
     systemPrompt: {
       variable(name, fn) { variables.set(name, fn); return () => variables.delete(name) },
     },
+    // 0.9.13: like dsh-workspace 0.2.1-rc.5 / 0.2.2-rc.5: create() puts the new workspace FIRST in the durable order (list() = that order),
+    // insertBefore(id, beforeId?) moves one, a registry-global pin set (newest first) that archiving drops, pinSession refuses an
+    // archived or unknown session, unpinSession is idempotent. `noPins` / `noOrder` drop those methods (an older DSH).
     workspaceRegistry: {
       archivedSessionIds: [],
+      pinnedSessionIds: [],
       list: () => workspaces.slice(),
-      async create(path, title) { const w = { id: 'ws' + workspaces.length, path, title }; workspaces.push(w); return w },
-      async archiveSession(sid) { ctx.workspaceRegistry.archivedSessionIds.push(sid) },
+      async create(path, title) { const w = { id: 'ws' + (seq++), path, title }; workspaces.unshift(w); return w },
+      async archiveSession(sid) {
+        const reg = ctx.workspaceRegistry
+        if (reg.archivedSessionIds.includes(sid)) return
+        if (reg.activeSessions?.has(sid)) throw Object.assign(new Error(`session ${sid} is active`), { name: 'WorkspaceActiveSessionError' })
+        reg.archivedSessionIds.push(sid)
+        reg.pinnedSessionIds = reg.pinnedSessionIds.filter((x) => x !== sid)
+      },
+      async insertBefore(id, beforeId) {
+        const at0 = workspaces.findIndex((w) => w.id === id)
+        if (at0 < 0 || (beforeId !== undefined && !workspaces.some((w) => w.id === beforeId))) throw new Error('WorkspaceOrderInvalidError')
+        if (beforeId === id) return workspaces.map((w) => w.id)
+        const [w] = workspaces.splice(at0, 1)
+        const at = beforeId === undefined ? workspaces.length : workspaces.findIndex((x) => x.id === beforeId)
+        workspaces.splice(at, 0, w)
+        return workspaces.map((x) => x.id)
+      },
+      async pinSession(sid) {
+        const reg = ctx.workspaceRegistry
+        if (reg.pinnedSessionIds.includes(sid)) return
+        if (reg.archivedSessionIds.includes(sid)) throw Object.assign(new Error(`session ${sid} is archived`), { name: 'WorkspaceArchivedSessionPinError' })
+        if (!sessions.has(sid)) throw Object.assign(new Error(`unknown session ${sid}`), { name: 'WorkspaceUnknownSessionError' })
+        reg.pinnedSessionIds = [sid, ...reg.pinnedSessionIds]
+      },
+      async unpinSession(sid) { const reg = ctx.workspaceRegistry; reg.pinnedSessionIds = reg.pinnedSessionIds.filter((x) => x !== sid) },
     },
     webServer: {
       register(r) {
