@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createSelfServe, createSelfTools, runTownCommand, pickGame, pickFish, pickPlace, renderLobby, failText, OWNER_DECIDES } from '../lib/self-serve.js'
+import { createSelfServe, createSelfTools, runTownCommand, pickGame, pickFish, pickPlace, renderLobby, failText, OWNER_DECIDES, cannotMeetText } from '../lib/self-serve.js'
 import { CHAT_TOOL_NAMES } from '../lib/chat-tools.js'
 import { TownError } from '../lib/town-client.js'
 import { GUIDE_STEPS, GUIDE_TITLE, guideText } from '../lib/guide.js'
@@ -91,6 +91,26 @@ test('a fish not in the lobby is still looked up by name (the town knows friends
   const ss = createSelfServe({ live: fakeLive(calls), journal: journal() })
   await ss.visit('老墨', 'her')
   assert.deepEqual(calls.find((c) => c[0] === 'visit')[1], { name: '老墨' })
+})
+
+test('0.9.8 TOWN_CANNOT_MEET: the reason in plain words and who she can meet now, never 「小镇没接（CODE）」', async () => {
+  // the town's 409 body (outside_self._cannot_meet, 11-22): reason, unmet, can_meet, and the receipt with the same detail
+  const body = { error: 'TOWN_CANNOT_MEET', reason: '「阿鲸」现在在休息（23:00以后），见不着，没去敲门。现在能见到的：「小满」、「豆豆」。', unmet: 'resting',
+    can_meet: [{ fish_id: 'f_man', name: '小满', friend: false, resident: true }, { fish_id: 'f_dd', name: '豆豆', friend: true }],
+    receipt: { ok: false, code: 'TOWN_CANNOT_MEET', reason: '「阿鲸」现在在休息（23:00以后），见不着，没去敲门。', piggy_yuan: '3.20', detail: { unmet: 'resting', can_meet: [] } } }
+  const err = new TownError('TOWN_CANNOT_MEET', 409, body.reason, 0, body)
+  assert.equal(cannotMeetText(err, '阿鲸'), '阿鲸这会儿见不着：在休息（23:00以后）。现在见得着：小满、豆豆。')
+  // only unmet + can_meet in the receipt's detail (no reason text): the words come from unmet
+  const bare = new TownError('TOWN_CANNOT_MEET', 409, '', 0, { error: 'TOWN_CANNOT_MEET', receipt: { detail: { unmet: 'playing', can_meet: [{ name: '七七' }] } } })
+  assert.equal(cannotMeetText(bare, '老墨'), '老墨这会儿见不着：正在打牌。现在见得着：七七。')
+  assert.equal(cannotMeetText(new TownError('TOWN_CANNOT_MEET', 409, '', 0, { unmet: 'away', can_meet: [] }), '阿鲸'), '阿鲸这会儿见不着：不在线。这会儿没有见得着的鱼，晚点再来。')
+  const jr = journal()
+  const ss = createSelfServe({ live: fakeLive([], { visit: async () => { throw err } }), journal: jr })
+  const her = await ss.visit('阿鲸', 'her')
+  assert.match(her, /^阿鲸这会儿见不着：在休息（23:00以后）。现在见得着：小满、豆豆。\n回执：没成｜去找阿鲸串门｜原因：阿鲸这会儿见不着/)
+  assert.match(her, /存钱罐 ¥3\.20/)
+  assert.doesNotMatch(her, /小镇没接|TOWN_CANNOT_MEET/)
+  assert.ok(jr.j.some((e) => /想去找阿鲸串门，没去成/.test(e.text)))
 })
 
 test('town errors and off duty become plain words, never throw', async () => {

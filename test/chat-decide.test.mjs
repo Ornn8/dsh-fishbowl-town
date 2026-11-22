@@ -258,3 +258,71 @@ test('0.9.3 visit target: a real id or her name, never the placeholder (11-19 �
     assert.match(text, /名单里没有的鱼，直接写她的名字/)
   }
 })
+
+// 0.9.8：小镇到了她自己定的时间来叫她（reasons 里有 'wake'）：一定是她的模型来定，插件不再自己回「过一会儿再叫我」
+test("0.9.8 'wake': inside decideEveryMinutes the town session decides now (role wake); outside it she thinks first as before; her plan / urgent still win", async () => {
+  let t = 1_800_000_000_000
+  const state = {}
+  const journal = createJournal({ state, now: () => t })
+  const asked = []
+  const brain = { async ask(_slot, text) { asked.push(text); return `嗯\n${PLAN_MARK}去镜湖边走走` } }
+  const chatLink = { mainChat: () => ({ sid: 'main-1' }), ownerIdleMs: () => 10 * 60_000 }
+  const notes = []
+  const diary = { note: (text, tag) => notes.push([tag, text]) }
+  const d = createChatDecide({ brain, chatLink, journal, diary, log, config: {}, state, now: () => t })
+  assert.equal(JSON.parse(d.route(agencyTurn('w1', ['wake'])).answer).note, NOTE_ASKING, 'long enough since the last think: she thinks first, as before')
+  for (let i = 0; i < 20 && d.busy; i++) await sleep(5)
+  assert.equal(asked.length, 1)
+  assert.deepEqual(d.route(agencyTurn('w2', ['wake'])), { role: 'execute' }, 'her plan waiting -> carried out')
+  journal.decision({ action: 'none', plan: { hours: 1, doing: '在镜湖边走走' } })
+  t += 60 * 60_000
+  assert.equal(JSON.parse(d.route(agencyTurn('w3', ['idle'])).answer).note, NOTE_WAITING, 'a town look of its own still waits for the interval')
+  assert.deepEqual(d.route(agencyTurn('w4', ['wake'])), { role: 'wake' }, 'her own time inside the interval: decided now, by her model')
+  assert.deepEqual(d.route(agencyTurn('w5', ['wake', 'idle'])), { role: 'wake' })
+  assert.deepEqual(d.route(agencyTurn('w6', ['wake', 'invited'])), { role: 'rules' })
+  assert.equal(asked.length, 1, 'no extra think inside the interval')
+  d.after('wake', { action: 'visit', target: '阿鲸', place: '面包房' })
+  assert.deepEqual(notes.at(-1), ['did', '你自己定的时间到了，小镇那边照你的打算定了：去面包房找阿鲸串门'])
+  const { buildTurnPrompt } = await import('../lib/prompt.js')
+  const p = buildTurnPrompt(agencyTurn('w7', ['wake']), { role: 'wake' })
+  assert.match(p, /该你自己拿主意了 · 你自己定的时间到了/)
+  assert.match(p, /你上次自己定的再拿主意的时间/)
+})
+
+test("0.9.8 runner: a 'wake' turn inside the interval goes to her model (never skipped as idle, never answered by the plugin)", { timeout: 20_000 }, async () => {
+  const { createSchedule } = await import('../lib/schedule.js')
+  const w = world()
+  w.state.chatDecideAt = Date.now() - 10 * 60_000 // she thought 10 minutes ago
+  const schedule = createSchedule({ state: w.state, getConfig: () => ({}) })
+  schedule.settle({ action: 'none', next_wake: 30 })
+  w.state.wake.at = Date.now() + 5 * 60_000 // the plugin's clock says five more minutes: the town's own time still counts
+  let polled = 0
+  const posted = []
+  const prompts = []
+  const client = {
+    async turns(_wait, signal) {
+      polled++
+      if (polled === 1) return { turns: [agencyTurn('ot_w', ['wake'])] }
+      await sleep(200); if (signal?.aborted) throw Object.assign(new Error('aborted'), { code: 'ABORTED' })
+      return { turns: [] }
+    },
+    async answer(id, body) { posted.push([id, body]); return { ok: true } },
+    async events() { return { next: 1, items: [] } },
+  }
+  const brain = { async ask(_slot, prompt) { prompts.push(prompt); return '{"action":"none","note":"去镜湖边坐坐","plan":{"hours":2,"doing":"镜湖边坐坐"}}' } }
+  const decide = createChatDecide({ brain, chatLink: w.chatLink, journal: w.journal, log, config: {}, state: w.state })
+  const runner = createRunner({ client, brain, log, journal: w.journal, schedule, chatDecide: decide, config: { eventsEveryMs: 60_000 } })
+  runner.start()
+  try {
+    for (let i = 0; i < 50 && !posted.length; i++) await sleep(50)
+    assert.equal(posted.length, 1)
+    assert.equal(prompts.length, 1, 'her model answered this turn')
+    assert.match(prompts[0], /你自己定的时间到了/)
+    const a = JSON.parse(posted[0][1])
+    assert.equal(a.note, '去镜湖边坐坐')
+    assert.equal(a.next_wake, 120, 'her own next time goes back to the town')
+    assert.ok(!runner.stats.skipped && !runner.stats.chatDecide)
+  } finally {
+    await runner.stop()
+  }
+})

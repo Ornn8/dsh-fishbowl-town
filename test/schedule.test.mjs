@@ -69,3 +69,30 @@ test('agency turns: her rest, quiet hours, min gap and idle-only reasons skip th
   assert.equal(u.today.calls, 2)
   assert.ok(u.total.skipped >= 1)
 })
+
+// 0.9.8：小镇到了她自己定的时间（next_wake）来叫她，reasons 里带 'wake'
+test("'wake' (her own next_wake came) always asks her model: alone, with idle reasons, even when the plugin thought she was still resting", () => {
+  let t = AFTERNOON
+  const cfg = { wakeMinMinutes: 0, quietHours: '00:00-08:00' }
+  const s = createSchedule({ state: {}, getConfig: () => cfg, now: () => t })
+  const turn = (reasons) => ({ kind: 'agency', packet: { reasons } })
+  s.settle({ action: 'none', plan: { hours: 1, doing: '在镜湖边坐坐' } })
+  t += 60 * 60_000
+  assert.equal(s.skip(turn(['wake'])), null, 'her own time: ask her')
+  assert.equal(s.skip(turn(['wake', 'idle'])), null, 'wake is not an idle reason')
+  assert.equal(s.skip(turn(['idle', 'fcode', 'ad', 'venue', 'wake'])), null)
+  assert.ok(s.skip(turn(['idle'])), 'idle alone is still skipped')
+  s.settle({ action: 'none', plan: { hours: 3, doing: '回家睡个午觉' } })
+  t += 20 * 60_000
+  assert.match(s.skip(turn(['idle'])).why, /回家睡个午觉/, 'an idle look in her rest is still skipped')
+  assert.equal(s.skip(turn(['wake'])), null, 'the town woke her at the time it has for her: that is her own decision time')
+  // the owner floors still hold
+  cfg.wakeMinMinutes = 60
+  s.settle({ action: 'none', next_wake: 60 })
+  t += 30 * 60_000
+  assert.match(s.skip(turn(['wake'])).why, /最短间隔 60 分钟/, 'the owner min gap holds')
+  t += 29.5 * 60_000
+  assert.equal(s.skip(turn(['wake'])), null, 'half a minute short of the gap (the two clocks) is not a skip')
+  t = at(3)
+  assert.match(s.skip(turn(['wake'])).why, /勿扰/, 'quiet hours hold')
+})
