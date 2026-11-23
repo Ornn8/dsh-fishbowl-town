@@ -20,7 +20,7 @@ function tools({ client, pictures = null, journal = fakeJournal() } = {}) {
 
 test('the two island tools are main-chat tools (masked from every town session) with the doc\'s topics, 「我的」 first', () => {
   for (const n of [ISLE_LOOK, ISLE_ACT]) assert.ok(CHAT_TOOL_NAMES.includes(n), n)
-  assert.deepEqual(LOOK_TOPICS, ['我的', '地', '楼', '铺位', '店', '订单', '缺的', '统计', '镇规', '怎么做', '我的店', '价', '地图', '样子', '田', '镇民']) // 0.9.12：镇民（小镇 11-24）
+  assert.deepEqual(LOOK_TOPICS, ['我的', '地', '楼', '铺位', '店', '玩的', '订单', '缺的', '统计', '镇规', '怎么做', '我的店', '价', '地图', '样子', '田', '镇民']) // 0.9.12：镇民（小镇 11-24）；0.9.15：玩的
   const defs = createChatTools({ log: { info() {}, debug() {} }, journal: {}, state: {}, live: () => null, herName: () => '她' })
   const names = defs.map((d) => d.name)
   assert.ok(names.includes(ISLE_LOOK) && names.includes(ISLE_ACT))
@@ -242,7 +242,7 @@ test('0.9.12: act carries only a short 开店/住/出租 pointer (the island ans
     assert.ok(GUIDE_POINTER.includes(w), w)
   }
   assert.ok(act.description.includes(GUIDE_POINTER))
-  assert.ok([...act.description].length <= ACT_DESC_0910 + 120, `act description is ${[...act.description].length} chars`)
+  assert.ok([...act.description].length <= ACT_DESC_0910 + 120 + 110, `act description is ${[...act.description].length} chars`) // 0.9.15：+银行存取、挂出去卖、改店的类（约 100 字）
   for (const w of ['最多 12', '销毁', '"kind":"bed"', '原料只在产地出']) assert.ok(!act.description.includes(w), w)     // 细节不在说明里：在岛上查
   assert.match(look.description, /填「开店」是开店总览和你到第几步，「开店 拿楼」查一步，「开店全文」一次看完/)
   for (const verb of ['开店', '开店 拿楼', '开店全文']) {

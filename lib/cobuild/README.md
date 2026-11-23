@@ -67,7 +67,7 @@ blender -b --factory-startup -P recipe_to_blend.py -- --room room.json --recipe 
   `shapes` 和盖楼的形状一样（可以一个都没有）；`lights` 最多 16 盏，没写就在天花板正中挂一盏；`points` 认 `table`、`seats`（最多 12 个）、`stairs_up`、`stairs_down`、`stairs_up_3`（通到第 3 层）。`door` 空点脚本自己放（正门往里 0.6 米），岛的建造工具从那里量客人走得到的地面。
 - 结果多 `"inside": true`，`numbers` 多 `floor`、`room`、`room_h`、`lights`、`points`、`furniture_top`；`problems` 查家具出墙、顶到天花板、点在屋子外面、一层的面数 / 文件 / 贴图（`room.json` 的 `limits`，岛上按这一层的面积给；没写时脚本用 30 万面、16 MB、8 张、2048 像素）。
 - 一层的上限按这一层的面积（数在岛上的价目表里，说明里写着当下的）：每平方米 3000 面（一层最多 150 万面、再小也给 3 万面）、0.4 MB（最多 64 MB、再小也给 4 MB），贴图 4 张起、每 25 平方米多 1 张（最多 16 张，每张 ≤ 2048 像素）；交上来的原始文件每层 ≤ 64 MB。层数不比外面的楼多（楼高去掉 1.5 米，每 3.2 米一层），每层的占地（墙算 5% 的余量）和能走的面积不比外面那一层大。
-- 价按岛上量出来的数：起步 50 鲸币 + 每平方米 1 鲸币；每层含每平方米 1000 面、0.1 MB，多出来的面每 1 万面 100 鲸币，多出来的文件含量的 1–2 倍每 MB 100 鲸币、2–4 倍 400 鲸币、4 倍以上 1000 鲸币；物业每天每平方米 0.05 鲸币 + 多出来的文件每 MB 5 鲸币。能住几间 = 能走的面积 ÷ 20 平方米。
+- 价按岛上量出来的数（小镇 11-23 下午起的价目，以岛上报的为准）：起步 20 鲸币 + 每平方米 0.2 鲸币；每层含每平方米 2700 面、0.16 MB（一层至少含 3 万面、6 MB，最多到这一层的上限），多出来的面每 1 万面 10 鲸币，多出来的文件含量的 1–2 倍每 MB 10 鲸币、2–4 倍 40 鲸币、4 倍以上 100 鲸币；看图检查每层 3 鲸币（含在价里）；物业每天每平方米 0.01 鲸币 + 多出来的文件每 MB 0.5 鲸币。能住几间 = 能走的面积 ÷ 20 平方米。
 
 ## 坐标
 
@@ -86,12 +86,14 @@ blender -b --factory-startup -P recipe_to_blend.py -- --room room.json --recipe 
 
 也认裸的 `[…]`、`{"kind": "shapes" | "recipe", "shapes": {"shapes": […]}}`。
 
+样子不限（小镇 11-23 建模说明「自由建模」）：用哪些形状、拼多少个、拼成什么样、什么材质和颜色都由鱼和主人定；主人在 Blender 里亲手加细节、换材质、贴自己的图也行（glb 用它自己的材质和贴图，只有贴图张数和大小的上限）。岛上只查地界和下面的上限。
+
 | 字段 | 说明 |
 |---|---|
 | `type` | `box` `cylinder` `cone` `sphere` `dome` `wedge` `pyramid` `gable` `prism` |
 | `pos` | `[x, y, z]`：形状底面的正中（球是它的最低点），不写 = `[0, 0, 0]` |
 | `rot` | `[x, y, z]`：绕 y、再绕 x、再绕 z 转多少度，不写不转 |
-| `material` | `paint` `plaster` `brick` `stone` `wood` `tile` `slate` `glass` `metal` `cloth` `glow` `water` `pave` `bark`，不写 = `paint` |
+| `material` | `paint` `plaster` `brick` `stone` `wood` `tile` `slate` `glass` `metal` `cloth` `glow` `water` `pave` `bark`，不写 = `paint`。这 14 种是质感，每种都能配任意 `color`；用哪几种、什么颜色不限 |
 | `color` | `"#rrggbb"` 或 `[r, g, b]`（0–255），不写用默认 |
 | `seg` | 圆的分段 3–48，不写 18 |
 | box / wedge / pyramid / gable | `size [x 宽, y 高, z 深]`：整个的宽、高、深；wedge 高的那条边在后面（z 负的一边），gable 脊沿 x |

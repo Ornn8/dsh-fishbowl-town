@@ -14,14 +14,15 @@ const README = readFileSync(join(ROOT, 'README.md'), 'utf8')
 const [look, act] = createIsleTools({ live: () => null })
 const SAID = { 新手引导: guideText(), README, 做一件事: act.description, 看岛上: look.description, 一起盖楼: BUILD_DESCRIPTION }
 
-test('the island\'s own sentences: rent = 0.2% of the paid price, the rate moves every day, land values follow nearby sales', () => {
-  assert.equal(RENT_RULE, '每天地租 = 成交价的 0.2%（按地价算的更高就按地价）')                        // land.rent_note()
+test('the island\'s own sentences: rent = 0.1% of the paid price (0.9.15: halved 11-23), the rate moves every day, land values follow nearby sales', () => {
+  assert.equal(RENT_RULE, '每天地租 = 成交价的 0.1%（按地价算的更高就按地价）')                        // land.rent_note()
   assert.equal(FX_RULE, '汇率每天收盘调一次：当天买鲸币的多就涨、卖的多就跌，一天最多涨跌 5%；离起步价 ¥0.004 越远，往回拉得越多，最多偏 30%。')   // exchange.rule_text()
   assert.equal(LAND_RULE, '地价每天按附近 14 天的成交价调：成交价高于底价就涨，流拍、退地就跌，一天最多变 5%，最多到原价的 3 倍、最少 0.7 倍。')   // market NOTE
   for (const [where, text] of [['新手引导', guideText()], ['README', README]]) {
     for (const rule of [RENT_RULE, FX_RULE, LAND_RULE]) assert.ok(text.includes(rule), `${where} lacks 「${rule.slice(0, 12)}…」`)
     assert.match(text, /汇率每天收盘调一次/, where)
-    assert.match(text, /成交价的 0\.2%/, where)
+    assert.match(text, /成交价的 0\.1%/, where)
+    assert.doesNotMatch(text, /0\.2%/, where)
   }
 })
 
@@ -44,7 +45,8 @@ test('idle land as the island runs it (idle.py): fee at 7 days, taken back at 14
 test('heavy models: the free allowance and the extra price and daily upkeep for faces and file size are stated; quotes are not cut', () => {
   assert.match(BUILD_STEP, /起步价里含一定的高度、体积、面数和文件大小，超出的另收；面数多、文件大的，每天的物业也跟着多/)
   assert.match(BUILD_STEP, /一项一项写着怎么算/)
-  for (const w of ['起步 62.5 鲸币，含 12 米高、1000 立方米', '20000 面、512 KB', '每一万面 125 鲸币', '每 MB 500 鲸币', '文件超出起步的每 MB 每天 20 鲸币', '面数超出起步的每一万面每天 10 鲸币']) {
+  // 0.9.15：小镇 11-23 下午降价（价目表 building，和 build_guide 里的数一样）
+  for (const w of ['起步 62.5 鲸币，含 20 米高、20000 立方米', '80000 面、2048 KB', '每一万面 50 鲸币', '每 MB 100 鲸币', '文件超出起步的每 MB 每天 2 鲸币', '面数超出起步的每一万面每天 1 鲸币']) {
     assert.ok(README.includes(w), w)
   }
 })
@@ -58,7 +60,7 @@ test('shops need an inside: one plain line in the act pointer (still <= 120), th
   assert.match(README, /\*\*楼里的室内（0\.9\.12）\*\*/)
   assert.match(README, /你说「交吧」才交、说「就这样」才扣鲸币（怎么做见上面「楼里的室内」）/)
   assert.doesNotMatch(README + guideText(), /做室内要 0\.9\.12 以上|这一版（0\.9\.1[12]）还做不了/)
-  for (const w of ['室内跟着外面的楼走：几层就做几层，每层不比外面大，面数和文件按面积给', '起步 50 鲸币 + 每平方米 1 鲸币', '物业每天每平方米 0.05 鲸币']) {
+  for (const w of ['室内跟着外面的楼走：几层就做几层，每层不比外面大，面数和文件按面积给', '起步 20 鲸币 + 每平方米 0.2 鲸币', '物业每天每平方米 0.01 鲸币']) { // 0.9.15：小镇 11-23 下午降价
     assert.ok(README.includes(w), w)
   }
 })
