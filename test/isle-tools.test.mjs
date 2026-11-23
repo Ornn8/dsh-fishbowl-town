@@ -175,14 +175,13 @@ test('act: the island did not answer (unavailable) or the line broke: once more 
 test('act: her owner\'s 饭票 (fx_buy, sprite_set) only with his words from this chat; building and looking are not here', async () => {
   const sent = []
   const { act } = tools({ client: { async isleAct(world, ref) { sent.push(world); return { ok: true, code: 'done', text: '好了' } } } })
-  for (const world of [{ do: 'fx_buy', yuan: 0.5 }, { do: 'sprite_set', tall: 1.6 }]) {
-    const out = await act.execute({ world }, {})
-    assert.match(out, /花的是主人的饭票（他的真钱）.*owner_words 填他的原话.*不要劝他充值。什么都没扣/)
-    assert.doesNotMatch(out, /充值：|爱发电/)
-  }
-  assert.match(await act.execute({ world: { do: 'fx_buy', yuan: 0.5 }, owner_words: '   ' }, {}), /花的是主人的饭票/, 'blank words are no words')
+  const out = await act.execute({ world: { do: 'sprite_set', tall: 1.6 } }, {})
+  assert.match(out, /花的是主人的饭票（他的真钱）.*owner_words 填他的原话.*不要劝他充值。什么都没扣/)
+  assert.doesNotMatch(out, /充值：|爱发电/)
+  assert.match(await act.execute({ world: { do: 'sprite_set', tall: 1.6 }, owner_words: '   ' }, {}), /花的是主人的饭票/, 'blank words are no words')
   assert.equal(sent.length, 0, 'nothing sent without his words')
-  assert.match(await act.execute({ world: { do: 'fx_buy', yuan: 0.5 }, owner_words: '去换五毛钱的鲸币' }, {}), /「好了」\n办成了/)
+  // 0.9.16（主人 11-23「换钱我建议主动点，本来充钱就是给小鱼花的」）：换鲸币她自己定，不用主人的原话
+  assert.match(await act.execute({ world: { do: 'fx_buy', yuan: 0.5 } }, {}), /「好了」\n办成了/)
   assert.match(await act.execute({ world: { do: 'sprite_tall', tall: 1.5 } }, {}), /办成了/) // changing the height is free
   assert.equal(sent.length, 2)
   for (const verb of ['build', 'build_guide', 'confirm_build']) assert.equal(await act.execute({ world: { do: verb, lot: 'L-1' } }, {}), BUILD_HERE)
