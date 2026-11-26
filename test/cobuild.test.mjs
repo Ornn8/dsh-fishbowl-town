@@ -10,8 +10,9 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   BLENDER_URL, LAYER_FILE, NEED_BLENDER, SCRIPT_FILE, SCRIPT_SHA256, blenderCandidates, blenderText, changesLine, createCobuild, createOwnerWords,
-  emptyLotsIn, findBlender, isYes, lowPriority, mdPath, messageText, numbersLine, parseBlenderVersion, parseResult, runBlender, versionOk,
+  atOf, emptyLotsIn, findBlender, isYes, lowPriority, mdPath, messageText, numbersLine, parseBlenderVersion, parseResult, runBlender, versionOk,
 } from '../lib/cobuild.js'
+import { createTownClient } from '../lib/town-client.js'
 import { BUILD_DESCRIPTION, BUILD_TOOL, createBuildTool } from '../lib/cobuild-tool.js'
 import { BUILD_STEP } from '../lib/guide.js'
 import { ISLE_BUILD_NOTE } from '../lib/prompt.js'
@@ -51,7 +52,7 @@ function fakeBlender() {
       writeFileSync(argOf(args, '--out-blend'), 'BLEND ' + text)
       writeFileSync(argOf(args, '--out-glb'), 'GLB ' + text)
       previews(argOf(args, '--previews'))
-      const numbers = { ...numbersFor(text), shapes: r.shapes.length }
+      const numbers = { ...numbersFor(text), shapes: r.shapes.length, ...(text.includes('入户门') ? { door_high: { low: 0.3, up: 0 } } : {}) }
       const problems = numbers.h > 300 ? [`高 ${numbers.h} 米，这块地最多 300 米`] : []
       return { ok: true, result: { cobuild: 1, ok: true, mode: 'recipe', numbers, problems, notes: [], secs: 1.2 }, why: [] }
     }
@@ -109,8 +110,8 @@ function setup(name, { found = { ok: true, path: 'C:/blender/blender.exe', versi
 test('the vendored recipe_to_blend.py is the island\'s file byte for byte; owner_layer.py is there', () => {
   const sha = createHash('sha256').update(readFileSync(SCRIPT_FILE)).digest('hex')
   assert.equal(sha, SCRIPT_SHA256)
-  // 0.9.12 和小镇 feat/1124-door-interior（室内跟着外面的楼走）那一份一样；那个工作区不在就不比
-  const server = join(ROOT, '..', 'wt-1124-door', 'ops', 'revenue-20261022', 'fishbowl-town', 'tools', 'cobuild', 'recipe_to_blend.py')
+  // 0.9.19 和小镇 11-26 包（feat/1126-pack2：门离地多高、0.3 米推回去）那一份一样；那个工作区不在就不比
+  const server = join(ROOT, '..', 'wt-1127-owner-door', 'ops', 'revenue-20261022', 'fishbowl-town', 'tools', 'cobuild', 'recipe_to_blend.py')
   if (existsSync(server)) assert.equal(createHash('sha256').update(readFileSync(server)).digest('hex'), SCRIPT_SHA256, 'same as the server copy')
   const layer = readFileSync(LAYER_FILE, 'utf8')
   assert.match(layer, /use_scripts=False/)
@@ -260,6 +261,9 @@ test('co-build: start → make (previews, numbers, local check) → submit only 
   const recipeCall = b.calls.at(-1)
   assert.equal(recipeCall.args[0], '--recipe')
   assert.ok(recipeCall.args.includes('--lot'), 'checked against the lot')
+  // 配方第 2 版（11-26）：她自己的图放在草稿的 images 文件夹，起头时就建好、说给她听，做的时候交给脚本
+  assert.equal(argOf(recipeCall.args, '--images'), join(dir, d.id, 'images'))
+  assert.ok(existsSync(join(dir, d.id, 'images')) && s.text.includes(join(dir, d.id, 'images')), 'she is told where her pictures go')
   assert.ok(!recipeCall.args.some((a) => a.includes('plaster')), 'her recipe goes in a file, never on the command line')
 
   // 他还没在看到这一版以后说话
@@ -446,6 +450,69 @@ test('the tool: main-chat only (masked from town sessions), session id passed fo
 })
 
 // 0.9.12（小镇 11-24 面多、文件大的楼另收、每天物业也多）：报价的「怎么算的」一项一项都给她，面数、文件、每天物业在后面，不能截在前 4 行
+test('one plot, several buildings (town 11-25): start new=true (+ x/z/ry) is its own draft and is handed in with new and at; without new it stays a rebuild', async () => {
+  const town = fakeTown()
+  const quotes = [{ ok: true, build_id: 'b-new', new: true, quote: { coin: 80, upkeep_day_coin: 2, new: true, rebuild: false, lines: ['在这块地上再盖一栋：按新楼算'] } },
+    { ok: true, build_id: 'b-re', new: false, quote: { coin: 90, upkeep_day_coin: 2, new: false, rebuild: true, lines: ['这块地上已经有楼：起步按重建费 62.5 鲸币算', '这是重建 L-0107：换掉原来那栋，不是再盖一栋'] } }]
+  town.isleBuild = async (body) => { town.sent.push({ what: 'build', ...body }); return quotes.shift() }
+  const { cb, say } = setup('plots', { town })
+  const tool = createBuildTool({ cobuild: cb })
+  const sid = { agent: { session: { id: OWNER } } }
+  say('地够大，我们再盖一栋小棚子吧')
+  const s = await tool.execute({ do: 'start', lot: 'L-0107', idea: '小棚子', new: true, x: 7.5, z: '-6', ry: 90, w: 3 }, sid)
+  assert.match(s.text, /上一起再盖一栋了（交上去岛上再查这块地还能不能盖、放不放得下；放在 \{"x":7\.5,"z":-6,"ry":90\}）/)
+  const nd = cb.active()
+  assert.equal(nd.addnew, true)
+  assert.deepEqual(nd.at, { x: 7.5, z: -6, ry: 90 })
+  await cb.make({ recipe: RECIPE })
+  await cb.status()
+  say('交吧')
+  const sub = await cb.submit({ sid: OWNER })
+  assert.match(sub.text, /80 鲸币，每天物业 2 鲸币（在这块地上再盖一栋）/)
+  const sent = town.sent.filter((x) => x.what === 'build')
+  assert.equal(sent[0].addnew, true)
+  assert.deepEqual(sent[0].at, { x: 7.5, z: -6, ry: 90 })
+
+  // 不写 new：另一份草稿，交上去是重建（报价写明）
+  say('第一栋也重盖一下')
+  const re = await tool.execute({ do: 'start', lot: 'L-0107', idea: '重盖第一栋' }, sid)
+  assert.match(re.text, /上一起盖楼了/)
+  assert.notEqual(cb.active().id, nd.id)
+  assert.equal(cb.active().addnew, undefined)
+  await cb.make({ recipe: RECIPE })
+  await cb.status()
+  say('交吧')
+  const r2 = await cb.submit({ sid: OWNER })
+  assert.match(r2.text, /（是重建：换掉原来那栋）/)
+  assert.match(r2.text, /这是重建 L-0107：换掉原来那栋，不是再盖一栋/)
+  assert.equal(town.sent.filter((x) => x.what === 'build')[1].addnew, false)
+
+  // 室内不管 new；x/z/ry 只留是数的
+  let got = null
+  const t2 = createBuildTool({ cobuild: { start: async (a) => { got = a; return { text: 'ok' } } } })
+  await t2.execute({ do: 'start', lot: 'L-0107', interior: true, new: true, x: 1 }, sid)
+  assert.deepEqual(got, { lot: 'L-0107', idea: undefined, interior: true, floor: undefined })
+  assert.equal(atOf('a', null, Infinity), null)
+  assert.deepEqual(atOf(0, '2.5', undefined), { x: 0, z: 2.5 })
+  assert.ok(BUILD_DESCRIPTION.includes('new=true') && BUILD_DESCRIPTION.includes('不写 new 交上去是重建原来那栋'))
+
+  // 小镇客户端：new / at 作为表单栏交（小镇 api_outside 照转给岛上）；没写 new 两栏都不带
+  const seen = []
+  const fetchImpl = async (url, init) => { seen.push(init.body); return new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }) }
+  const c = createTownClient({ base: 'https://town.test/town/api/outside/', code: 'fbo_test', fetchImpl })
+  await c.isleBuild({ lot: 'L-0107', ownerWords: '交吧', glb: Buffer.from('glTF'), addnew: true, at: { x: 7.5, z: -6 } })
+  await c.isleBuild({ lot: 'L-0107', ownerWords: '交吧', glb: Buffer.from('glTF'), at: { x: 1 } })
+  await c.isleBuild({ lot: 'L-0107', ownerWords: '交吧', glb: Buffer.from('glTF'), doorHigh: { low: 4.25, up: 3, x: 1, side: 'front' } })
+  await c.isleBuild({ lot: 'L-0107', ownerWords: '交吧', glb: Buffer.from('glTF'), doorHigh: {} })
+  assert.equal(seen[0].get('door_high'), null)                       // 0.9.19 门离地多高：只留 low / up；量了没认出门是 {}
+  assert.equal(seen[2].get('door_high'), '{"low":4.25,"up":3}')
+  assert.equal(seen[3].get('door_high'), '{}')
+  assert.equal(seen[0].get('new'), 'true')
+  assert.equal(seen[0].get('at'), '{"x":7.5,"z":-6}')
+  assert.equal(seen[1].get('new'), null)
+  assert.equal(seen[1].get('at'), null)
+})
+
 test('the quote 「怎么算的」 lines all reach her (faces, file size and the daily upkeep come last)', async () => {
   const lines = ['起步 62.5 鲸币（12 米、1000 立方米、20000 面、512 KB 以内）', '高度 14 米（起步含 12）：多出来的 2 米 25.0 鲸币', '体积 1200 立方米（起步含 1000）：多出来的 200 立方米 50.0 鲸币',
     '面数 80000 面（起步含 20000）：多出来的 60000 面 1500.0 鲸币', '文件 3072 KB（起步含 512）：多出来的 2560 KB 2250.0 鲸币', '每天物业 72.5 鲸币（起步 2.5；文件超出起步的每 MB 每天 20、面数超出起步的每一万面每天 10）']
@@ -459,6 +526,20 @@ test('the quote 「怎么算的」 lines all reach her (faces, file size and the
   const out = (await cb.submit({ sid: OWNER })).text
   assert.match(out, /3887\.5 鲸币，每天物业 72\.5 鲸币/)
   for (const x of lines) assert.ok(out.includes(x), `missing: ${x}`)
+})
+
+test('0.9.19: the hand-in carries the door height the build script measured (numbers.door_high); a version with no door found sends {}', async () => {
+  for (const [name, recipe, want] of [['door-high', { shapes: [...RECIPE.shapes, { type: 'box', pos: [0, 0.3, 2], size: [1, 2.1, 0.1], name: '入户门' }] }, { low: 0.3, up: 0 }],
+    ['door-high-none', RECIPE, {}]]) {
+    const town = fakeTown()
+    const { cb, say } = setup(name, { town })
+    say('我们盖个房子吧')
+    await cb.start({ lot: 'L-0107', idea: '小木屋' })
+    await cb.make({ recipe })
+    say('交吧')
+    assert.match((await cb.submit({ sid: OWNER })).text, /交上去了/)
+    assert.deepEqual(town.sent.filter((x) => x.what === 'build')[0].doorHigh, want)
+  }
 })
 
 test('no style advice in what the plugin says about co-building (主人 11-20「不要带风格化的提示词」); island money is 鲸币, no push to spend', async () => {
@@ -524,4 +605,23 @@ test('real Blender: recipe → previews → he adds a chimney in Blender → her
   assert.match(sub.text, /交上去了/)
   const glb = town.sent.find((x) => x.what === 'build').glb
   assert.equal(glb.subarray(0, 4).toString('latin1'), 'glTF')
+})
+
+test('0.9.19: her idea and his words go to the island whole (the island measures them, up to 500, and says when over); no 200 cut here', async () => {
+  const { cb, say, town } = setup('long-words')
+  const idea = '海边的小木屋，两层，屋顶是浅蓝色的，'.repeat(25) // 450 字
+  say('我们盖个房子吧')
+  await cb.start({ lot: 'l-0107', idea })
+  assert.match((await cb.make({ recipe: JSON.stringify(RECIPE) })).text, /能交/)
+  const words = '窗户朝海，屋顶刷成浅蓝色，门口放两盆花，楼梯在左边，'.repeat(18) + '交吧' // 470 字
+  say(words)
+  assert.match((await cb.submit({ sid: OWNER })).text, /交上去了/)
+  const sent = town.sent.find((x) => x.what === 'build')
+  assert.equal([...sent.idea].length, 450)
+  assert.equal(sent.idea, idea)
+  assert.equal(sent.ownerWords, words)
+  const yes = '我仔细看过报价了，物业也能接受，'.repeat(20) + '盖吧'
+  say(yes)
+  await cb.confirm({ sid: OWNER })
+  assert.equal(town.sent.find((x) => x.what === 'confirm').owner_words, yes)
 })

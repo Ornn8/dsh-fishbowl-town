@@ -10,7 +10,8 @@ import { describeEvent, noMoney } from '../lib/events.js'
 import { diaryEntry, createDiary, SELF } from '../lib/diary.js'
 import { createJournal, describeDecision } from '../lib/journal.js'
 import { TownError, createTownClient } from '../lib/town-client.js'
-import { createSelfServe, townReceipt, townReceiptLine, renderLobby, failText, runTownCommand, createSelfTools } from '../lib/self-serve.js'
+import { failText, runTownCommand } from '../lib/self-serve.js'
+import * as SS from '../lib/self-serve.js'
 import { createExtras, isGone, renderRecord, renderWeek, renderRoom, renderAlbum, renderPhone, renderBudget, renderReceipts, receiptLine } from '../lib/extras.js'
 import { createSocialServe, createSocialTools } from '../lib/social-tools.js'
 import { CHAT_TOOL_NAMES } from '../lib/chat-tools.js'
@@ -29,7 +30,8 @@ test('decision prompt: the social note appears only when the town put social / p
   const rich = buildTurnPrompt(agency({}, '{"社交":{"存钱罐":"挺鼓的"},"小手机":{"新消息":[]}}'), { secondsLeft: 20 })
   assert.ok(rich.includes(SOCIAL_NOTE))
   assert.match(rich, /不想做就不写/)
-  assert.match(rich, /挺鼓的时候可以大方一点/)
+  assert.match(rich, /花不花、花多少你自己定/)                                            // 0.9.17：不再写「挺鼓的时候大方一点、紧就省着点」
+  assert.doesNotMatch(rich, /省着点|大方一点/)
   assert.match(rich, /绝不开口跟主人要钱/)
   assert.doesNotMatch(SOCIAL_NOTE, /请主人|给我充值|帮我充/)
   // the hint (which carries the town's own side fields) is still in the prompt untouched
@@ -151,42 +153,8 @@ test('town client: the error keeps the town body (receipts ride on 4xx) and the 
 })
 
 // ---------------------------------------------------------------------------------------------------------------- receipts
-test('self-serve uses the town receipt (success and 4xx), says when the piggy number is old, and lists the arcade machines', async () => {
-  const calls = []
-  const jr = []
-  const journal = { event: (k, t) => jr.push(t) }
-  const okReceipt = { ok: true, action: 'goto', state: 'done', code: 'OK', reason: '在电玩城玩了投篮机1次，最好成绩 38分；花了 ¥0.02。', where: { kind: 'place', place_id: 'arcade', place_name: '电玩城', machine_zh: '投篮机' }, piggy_yuan: '4.98', piggy_known: true, piggy_stale: false, spent_yuan: '0.02' }
-  const client = {
-    lobby: async () => ({ places: [{ place: 'arcade', name_zh: '电玩城', how: 'do=play', machines: { hoops: { zh: '投篮机', price_yuan: '0.10' }, claw: { zh: '抓娃娃机', price_yuan: '0.20' } } }, { place: 'pier', name_zh: '码头' }], fish: [], tables: [], games: [] }),
-    goto: async (b) => { calls.push(b); return { ok: true, place: 'arcade', receipt: okReceipt, ...okReceipt } },
-    status: async () => ({ piggy_yuan: '99' }),
-  }
-  const ss = createSelfServe({ live: () => ({ client }), journal })
-  assert.match(renderLobby(await client.lobby()), /电玩城的机器（去的时候填 machine）：投篮机\(hoops\) ¥0\.10\/次、抓娃娃机\(claw\) ¥0\.20\/次/)
-  const r = await ss.place('电玩城', 'her', { do: 'play', machine: 'hoops' })
-  assert.deepEqual(calls[0], { place: 'arcade', machine: 'hoops', do: 'play' })
-  assert.match(r, /回执：成了｜去电玩城（play）｜在电玩城玩了投篮机1次，最好成绩 38分；花了 ¥0\.02。｜现在：电玩城 · 投篮机｜花了 ¥0\.02｜存钱罐 ¥4\.98（只给你自己掂量要不要玩，不要跟主人提钱）/)
-  assert.doesNotMatch(r, /99/, 'the town receipt wins over the status number')
-  // arcade with a machine but no "do": goes through (the town reads it as play)
-  assert.doesNotMatch(await ss.place('电玩城', 'owner', { machine: 'claw' }), /能做的事，挑一样再去/)
-
-  // 4xx with a receipt: the town's reason, her money then, and the code; journalled as a failed try
-  const bad = new TownError('PLACE_SHORT', 409, '余额不够这一次。', 0, { error: 'PLACE_SHORT', receipt: { ok: false, code: 'PLACE_SHORT', reason: '余额不够这一次。', where: { kind: 'place', place_name: '电玩城' }, piggy_yuan: '0.01', piggy_known: true, piggy_stale: true } })
-  const ss2 = createSelfServe({ live: () => ({ client: { ...client, goto: async () => { throw bad } } }), journal })
-  const her = await ss2.place('电玩城', 'her', { do: 'play', machine: 'claw' })
-  assert.doesNotMatch(her, /afdian|充值/, 'she is never pointed at a top-up')
-  assert.doesNotMatch(her, /。。/, 'no doubled full stop')
-  assert.match(her, /回执：没成｜去电玩城｜原因：余额不够这一次。（PLACE_SHORT）｜现在：电玩城｜存钱罐 ¥0\.01（上次读到的数字）/)
-  const owner = await ss2.place('电玩城', 'owner', { do: 'play', machine: 'claw' })
-  assert.match(owner, /afdian/, 'the owner gets the top-up link')
-  assert.ok(jr.some((t) => /想去电玩城，没成/.test(t)))
-
-  // a piggy number that cannot be read is said so, never a question mark
-  const blind = townReceiptLine('her', { ok: true, code: 'OK', reason: '好了', piggy_yuan: null, piggy_known: false, piggy_note: '小镇这会儿读不到余额' }, { what: '去码头（fish）' })
-  assert.match(blind, /存钱罐的数字这会儿读不到（小镇这会儿读不到余额）/)
-  assert.doesNotMatch(blind, /\?|？/)
-  assert.equal(townReceipt({ ok: true }), null, 'an old town answer has no receipt: the old path stays')
-  assert.ok(townReceipt({ code: 'OK', reason: 'x', state: 'done', piggy_yuan: '1' }), 'the receipt fields spread to the top level also count')
+// 0.9.17：老镇的自助工具（码头、电玩城、开桌、串门）和它们的回执删了（self-serve.js）；小镇的回错照旧说成人话
+test('town receipt codes become plain words', () => {
   assert.match(failText(new TownError('TOWN_OWNER_PAUSED', 409, '主人把她暂停了')), /主人把你暂停了/)
   assert.match(failText(new TownError('TOWN_DAY_CAP', 409)), /每日花费上限/)
   assert.match(failText(new TownError('ARCADE_BAD_MACHINE', 400, '电玩城没有这台机器')), /没有这台机器（ARCADE_BAD_MACHINE）/)
@@ -365,12 +333,33 @@ test('「为朋友做点什么」: asks the town only when her model calls it; r
 })
 
 test('the owner commands for the new features (view only, graceful when the town lacks them)', async () => {
-  const jr = { event() {} }
-  const ss = createSelfServe({ live: () => null, journal: jr })
   const more = async (verb) => (verb === 'album' ? { kind: 'success', text: '相册…' } : null)
-  assert.equal((await runTownCommand('album', { selfServe: ss, status: async () => '', more })).text, '相册…')
-  assert.equal((await runTownCommand('相册', { selfServe: ss, status: async () => '', more })).kind, 'error', 'unknown to the handler -> help')
-  const help = (await runTownCommand('help', { selfServe: ss, status: async () => '' })).text
+  assert.equal((await runTownCommand('album', { status: async () => '', more })).text, '相册…')
+  assert.equal((await runTownCommand('相册', { status: async () => '', more })).kind, 'error', 'unknown to the handler -> help')
+  const help = (await runTownCommand('help', { status: async () => '' })).text
   for (const v of ['album', 'week', 'room', 'phone', 'record', 'receipts', 'budget', 'look', 'card']) assert.match(help, new RegExp(`/town ${v}`))
-  assert.ok(createSelfTools({ selfServe: ss, noteSession() {} }).length === 4, 'the four old self tools are unchanged')
+  assert.equal(SS.createSelfTools, undefined, '0.9.17: the four old-town self tools are gone')
+})
+
+test('0.9.17 a phone message with a meet the town did not take (老镇安静 old_quiet): sent, and she reads that the meet did not happen', async () => {
+  const { createSocialServe: serve, meetRefused } = await import('../lib/social-tools.js')
+  assert.equal(meetRefused({ ok: true, outcome: 'sent' }), '')
+  assert.equal(meetRefused({ ok: true, outcome: 'meet' }), '')
+  assert.equal(meetRefused(null), '')
+  assert.equal(meetRefused({ ok: true, outcome: 'sent:old_quiet' }), '约见面没成：新的见面先不约了，约好的照常见')
+  assert.equal(meetRefused({ ok: true, outcome: 'sent:meet_x' }), '约见面没成：小镇没收（meet_x）')
+  assert.equal(meetRefused({ ok: true, outcome: 'sent:old_quiet', meet_reason: '小镇的话' }), '约见面没成：小镇的话', 'the town words win when it sends them')
+  const why = '老镇不再开新的了（11 月 28 日关门），新的见面先不约；消息照常发，已经约好的照常见' // 小镇第四版 fe831823 的 REASON_ZH
+  assert.equal(meetRefused({ ok: true, outcome: 'sent:old_quiet', meet_reason: why }), `约见面没成：${why}`)
+  assert.equal(meetRefused({ ok: true, outcome: 'sent:old_quiet', meet_reason: why + '。' }), `约见面没成：${why}`, 'no double full stop')
+  const sent = []
+  const notes = []
+  const client = { phoneSend: async (b) => { sent.push(b); return { ok: true, outcome: 'sent:old_quiet', day_left: 9 } } }
+  const social = serve({ live: () => ({ client }), journal: { event: (k, t) => notes.push(t) }, extras: { fishByName: async () => ({ fish_id: 'f1', name: '阿鲸' }) } })
+  const r = await social.act({ do: 'phone', to: '阿鲸', text: '明晚见？', meet: { place: 'pier', in_hours: 20 } })
+  assert.equal(sent[0].meet.place, 'pier')
+  assert.match(r, /^办了：用小手机给阿鲸发了消息。约见面没成：新的见面先不约了，约好的照常见。/)
+  assert.ok(notes.some((t) => /约见面没成/.test(t)))
+  client.phoneSend = async () => ({ ok: true, outcome: 'meet' })
+  assert.doesNotMatch(await social.act({ do: 'phone', to: '阿鲸', text: '明晚见？', meet: { place: 'pier', in_hours: 20 } }), /没成/)
 })

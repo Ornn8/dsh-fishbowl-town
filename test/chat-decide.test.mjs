@@ -252,8 +252,10 @@ test('0.9.0 brain.watchReply: her reply of the turn running in his chat comes ba
 
 test('0.9.3 visit target: a real id or her name, never the placeholder (11-19 小馋鱼 「目标不对」)', async () => {
   const { buildTurnPrompt } = await import('../lib/prompt.js')
+  const turn = agencyTurn('v1')
+  turn.packet.actions = ['none', 'visit'] // 0.9.17：小镇没列动作就只有 none；这条测的是小镇列了 visit 时
   for (const role of ['execute', undefined]) {
-    const text = buildTurnPrompt(agencyTurn('v1'), { wish: '去找鱼圆串门', wishOwn: true, role })
+    const text = buildTurnPrompt(turn, { wish: '去找鱼圆串门', wishOwn: true, role })
     assert.doesNotMatch(text, /"target": "fish_id"/)
     assert.match(text, /名单里没有的鱼，直接写她的名字/)
   }
@@ -346,4 +348,49 @@ test("0.9.8 runner: a 'wake' turn inside the interval goes to her model (never s
   } finally {
     await runner.stop()
   }
+})
+
+// 0.9.18（11-25 核实）：「主聊天拿主意」那一问以前带的是主人没过滤的原话，也不看「说漏 3 次就停用」
+test('0.9.18 the decide ask carries the scrubbed life (same as the town turns); off -> none; her plan is stored scrubbed', async () => {
+  const raw = ['主人（5 分钟前）：我手机 138 0013 8000，邮箱 abc@example.com，明天去火车站']
+  const mk = ({ ownerLife, reply = `好\n${PLAN_MARK}去火车站接 13800138000 的朋友` } = {}) => {
+    const state = {}
+    const journal = createJournal({ state })
+    const asked = []
+    const brain = { async ask(slot, text) { asked.push(text); return reply } }
+    const chatLink = { mainChat: () => ({ sid: 'main-1', how: 'bound' }), ownerIdleMs: () => 10 * 60_000, ownerLife: () => raw }
+    const decide = createChatDecide({ brain, chatLink, journal, log, config: {}, state, ownerLife })
+    return { journal, asked, decide }
+  }
+  // no injected ownerLife: falls back to scrubbing chatLink's lines
+  const a = mk()
+  a.decide.take(agencyTurn('p1'))
+  for (let i = 0; i < 20 && a.decide.busy; i++) await sleep(5)
+  assert.equal(a.asked.length, 1)
+  assert.doesNotMatch(a.asked[0], /138|8000|abc@example\.com/)
+  assert.match(a.asked[0], /（一串数字）/)
+  assert.match(a.asked[0], /（邮箱）/)
+  assert.match(a.asked[0], /明天去火车站/)
+  assert.equal(a.journal.pendingWish(), '去火车站接 （一串数字） 的朋友')
+  // injected (index.js: echoOff -> []): the ask has no 「你和主人最近的事」 at all
+  const b = mk({ ownerLife: () => [] })
+  b.decide.take(agencyTurn('p2'))
+  for (let i = 0; i < 20 && b.decide.busy; i++) await sleep(5)
+  assert.equal(b.asked.length, 1)
+  assert.doesNotMatch(b.asked[0], /你和主人最近的事|火车站/)
+  // injected lines are used as given
+  const c = mk({ ownerLife: () => ['主人（1 分钟前）：想吃面'] })
+  c.decide.take(agencyTurn('p3'))
+  for (let i = 0; i < 20 && c.decide.busy; i++) await sleep(5)
+  assert.match(c.asked[0], /想吃面/)
+  assert.doesNotMatch(c.asked[0], /火车站/)
+})
+
+test('0.9.18 a wish from the main-chat tool is stored scrubbed too', () => {
+  const state = {}
+  const journal = createJournal({ state })
+  journal.wish('去 https://x.cn/a 那家店，找 @小王 要 6222 0000 1111 的卡', { own: true })
+  assert.equal(journal.pendingWish(), '去 （链接） 那家店，找 （某人） 要 （一串数字） 的卡')
+  journal.wish('https://x.cn/a')
+  assert.equal(journal.pendingWish(), '（链接）')
 })

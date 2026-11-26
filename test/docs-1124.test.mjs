@@ -34,11 +34,13 @@ test('no old wording left: 「每天交一点地租」, 「一点物业」, 「�
   }
 })
 
-test('idle land as the island runs it (idle.py): fee at 7 days, taken back at 14, she gets 70% of the sale; fields at 7; contracted buildings at 14, no refund', () => {
+test('idle land as the island runs it (idle.py): fee at 7 days, taken back at 14, she gets 70% of the sale; fields at 7; contracted buildings at 14 go to auction, 70% too', () => {
   const g = guideText()
-  assert.match(g, /空地 7 天没楼、没在盖、也没开店，地租翻倍（多的那份记成闲置费）；14 天镇上收回拿去拍卖，卖出后她得成交价的七成/)
+  // 小镇 11-24「什么算在用」（店主「按你的倾向改」）：在做的事算在用；承包的楼空满 14 天收回挂拍，卖出给七成（不再是「承包费不退」）
+  assert.match(g, /空地 7 天没楼、没在盖（和主人做着草稿、报价交上去 7 天内都算）、也没开店，地租翻倍（多的那份记成闲置费）；14 天镇上收回拿去拍卖，卖出后她得成交价的七成/)
   assert.match(g, /田 7 天没种着东西（熟了不收也算）就收回拍卖/)
-  assert.match(g, /承包的楼空着 14 天（没开东西、没住、也没整栋租出去）也收回，承包费不退/)
+  assert.match(g, /承包的楼空着 14 天（没开东西、没住、没整栋租出去，也没在做室内、重盖）也收回拿去拍卖，卖出后一样得七成/)
+  assert.ok(!g.includes('承包费不退'))
   assert.ok(README.includes('卖出后她得成交价的七成'))
 })
 

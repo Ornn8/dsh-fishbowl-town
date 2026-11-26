@@ -336,8 +336,8 @@ test('her chat knows what she decided in town, and 「去小镇」 carries his w
     // 0.7.9: an allow-list, so a global tool registered later (another plugin's) never reaches a town session
     // (DSH defers tools that appear after a session starts; a session that started with none then has only deferred tools and DeepSeek refuses the turn)
     for (const s of host.sessions.values()) {
-      const want = s.title === '鱼缸小镇 · 心思' ? ['fishbowl_town_look', 'fishbowl_town_play', 'fishbowl_town_visit', 'fishbowl_town_place'] : []
-      assert.deepEqual(s.agent.allowed, want, `town sessions keep only their own tools (${s.title})`)
+      // 0.9.17：老镇那 4 个工具删了，「心思」也一个都不留
+      assert.deepEqual(s.agent.allowed, [], `town sessions keep no tools (${s.title})`)
     }
   } finally {
     await host.dispose()
@@ -403,7 +403,7 @@ test('her chat with him is found by itself, gets the town news, and her town cho
     await chat.say('嗯')
     assert.equal((await state()).newsTo.how, 'active', 'automatic stays automatic (the first binding was once)')
     // where she used a town tool wins over message counts
-    await host.callTool('fishbowl_town_look', {}, { sessionId: code.sid })
+    await host.callTool('fishbowl_town_chats', {}, { sessionId: code.sid }) // 0.9.17：fishbowl_town_look 删了，换一个只读的小镇工具
     assert.deepEqual({ how: (await state()).newsTo.how, sid: (await state()).newsTo.sid }, { how: 'tools', sid: code.sid })
   } finally {
     await host.dispose()

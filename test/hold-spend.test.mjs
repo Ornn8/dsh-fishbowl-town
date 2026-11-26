@@ -29,6 +29,15 @@ test('spend hold: pier, arcade, make, bare do, a paid want and paid plan steps a
   }
   // without the hold nothing changes
   assert.deepEqual(holdCheck('agency', JSON.stringify({ action: 'pier', pier: { do: 'fish', casts: 2 } }), ['promise']).found, [])
-  assert.match(HOLD_KINDS.spend, /钓鱼/)
+  assert.match(HOLD_KINDS.spend, /电玩城/) // 0.9.17 第三版：电玩城是一条鱼的店，照开，说明里列着
+  assert.doesNotMatch(HOLD_KINDS.spend, /钓鱼|手作/) // 0.9.17：老镇停了，说明里不再列码头、手作（拦的代码照旧，小镇还发就照拦）
   assert.match(HOLD_KINDS.spend, /座位费不算/)
+})
+
+test('0.9.17: spend hold also stops the arcade written in world (the fish-owned arcade, reached from the island)', () => {
+  const h = holdCheck('agency', JSON.stringify({ action: 'none', world: { do: 'arcade', machine: '投篮机' }, note: '想玩' }), ['spend'])
+  assert.deepEqual(h.found, ['去电玩城玩机器（投篮机）'])
+  assert.deepEqual(JSON.parse(h.clean), { action: 'none', note: '想玩' })
+  assert.deepEqual(holdCheck('agency', JSON.stringify({ action: 'none', world: { do: 'walk', to: '镜湖' } }), ['spend']).found, [])
+  assert.deepEqual(holdCheck('agency', JSON.stringify({ action: 'none', world: { do: 'arcade', machine: '投篮机' } }), ['promise']).found, [])
 })

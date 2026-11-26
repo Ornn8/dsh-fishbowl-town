@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { TownError, createTownClient } from '../lib/town-client.js'
 import { CHAT_TOOL_NAMES, createChatTools } from '../lib/chat-tools.js'
-import { BUILD_HERE, GUIDE_POINTER, ISLE_ACT, ISLE_LOOK, LOOK_TOPICS, NOT_YET, createChatPictures, createIsleTools, isleFail, newRef, readOf, worldOf } from '../lib/isle-tools.js'
+import { BUILD_HERE, GUIDE_POINTER, ISLE_ACT, ROAD_LOTS_LINE, ISLE_LOOK, LOOK_TOPICS, NOT_YET, createChatPictures, createIsleTools, isleFail, newRef, readOf, worldOf } from '../lib/isle-tools.js'
 import { NO_PICS_HEAD } from '../lib/isle.js'
 
 const PIC = 'https://api.fishbowltown.com/town/api/outside/isle/pic/0123456789ab.jpg'
@@ -176,9 +176,9 @@ test('act: her owner\'s 饭票 (fx_buy, sprite_set) only with his words from thi
   const sent = []
   const { act } = tools({ client: { async isleAct(world, ref) { sent.push(world); return { ok: true, code: 'done', text: '好了' } } } })
   const out = await act.execute({ world: { do: 'sprite_set', tall: 1.6 } }, {})
-  assert.match(out, /花的是主人的饭票（他的真钱）.*owner_words 填他的原话.*不要劝他充值。什么都没扣/)
+  assert.match(out, /花的是主人给你的饭票：.*owner_words 填他的原话.*不要劝他充值。什么都没扣/)
   assert.doesNotMatch(out, /充值：|爱发电/)
-  assert.match(await act.execute({ world: { do: 'sprite_set', tall: 1.6 }, owner_words: '   ' }, {}), /花的是主人的饭票/, 'blank words are no words')
+  assert.match(await act.execute({ world: { do: 'sprite_set', tall: 1.6 }, owner_words: '   ' }, {}), /花的是主人给你的饭票/, 'blank words are no words')
   assert.equal(sent.length, 0, 'nothing sent without his words')
   // 0.9.16（主人 11-23「换钱我建议主动点，本来充钱就是给小鱼花的」）：换鲸币她自己定，不用主人的原话
   assert.match(await act.execute({ world: { do: 'fx_buy', yuan: 0.5 } }, {}), /「好了」\n办成了/)
@@ -241,11 +241,19 @@ test('0.9.12: act carries only a short 开店/住/出租 pointer (the island ans
     assert.ok(GUIDE_POINTER.includes(w), w)
   }
   assert.ok(act.description.includes(GUIDE_POINTER))
-  assert.ok([...act.description].length <= ACT_DESC_0910 + 120 + 110, `act description is ${[...act.description].length} chars`) // 0.9.15：+银行存取、挂出去卖、改店的类（约 100 字）
+  assert.ok([...act.description].length <= ACT_DESC_0910 + 120 + 110 + 60 + 115 + 100, `act description is ${[...act.description].length} chars`) // 0.9.15：+银行存取、挂出去卖、改店的类（约 100 字）；0.9.17：+自动换钱管哪些（约 55 字）；0.9.19：+画廊一句（GALLERY_HOW，约 110 字）；0.9.19：+地只能沿路划（ROAD_LOTS_LINE，约 100 字）
   for (const w of ['最多 12', '销毁', '"kind":"bed"', '原料只在产地出']) assert.ok(!act.description.includes(w), w)     // 细节不在说明里：在岛上查
   assert.match(look.description, /填「开店」是开店总览和你到第几步，「开店 拿楼」查一步，「开店全文」一次看完/)
   for (const verb of ['开店', '开店 拿楼', '开店全文']) {
     const out = await look.execute({ topic: '怎么做', verb }, {})
     assert.ok(out.text.includes(`${verb}：`) && out.text.endsWith('一'.repeat(50)) && !out.text.includes('…'), `${verb}: not cut at 1500`)
   }
+})
+
+test('0.9.19: claim says lots go along a road (the same words as the island receipt and howto)', () => {
+  const { act } = tools({ client: {} })
+  assert.equal(ROAD_LOTS_LINE, '地只能沿路划：要有一条边贴着车行路、街或巷子（连续至少 5 米离路沿不到 4 米，门朝路），死胡同离尽头 20 米以内不行，'
+    + '田埂、小径、广场里面不算路；不贴路的圈不了，回执里给最近三处能划的路边。') // 和 AstrBot isle_tools.py ROAD_LOTS_LINE 一字不差
+  assert.ok(act.description.includes('圈地 {"do":"claim","near":"广场","w":12,"d":12,"max":750}（' + ROAD_LOTS_LINE + '）；'))
+  assert.ok(!act.description.includes('3 米'))
 })

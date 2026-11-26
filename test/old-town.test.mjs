@@ -6,7 +6,7 @@ import { buildTurnPrompt } from '../lib/prompt.js'
 import { buildAsk, buildNoteAsk } from '../lib/chat-decide.js'
 import { renderBlock } from '../lib/town-context.js'
 import { TOWN_WHO } from '../lib/journal.js'
-import { createSelfServe, runTownCommand, COMMAND_HELP, OWNER_DECIDES } from '../lib/self-serve.js'
+import { runTownCommand, COMMAND_HELP, OWNER_DECIDES } from '../lib/self-serve.js'
 import { createTownClient, TownError } from '../lib/town-client.js'
 import { guideText } from '../lib/guide.js'
 
@@ -22,26 +22,35 @@ function agency({ isle = true, actions = ['none', 'signup', 'visit', 'pier'] } =
   return { turn_id: 't1', kind: 'agency', packet }
 }
 
-test('the island lines follow the turn and the date', () => {
-  assert.deepEqual(O.isleLines(agency(), BEFORE), [O.ISLE_HOME, O.OLD_TOWN])
-  assert.deepEqual(O.isleLines(agency(), AFTER), [O.ISLE_HOME]) // 11-28 起不再提老镇
-  assert.deepEqual(O.isleLines(agency({ isle: false }), BEFORE), [O.OLD_TOWN]) // 不在岛上：不说她住在岛上
-  assert.deepEqual(O.isleLines(agency({ actions: ['none'] }), BEFORE), [O.ISLE_HOME]) // 小镇不列老镇的动作了：不提
-  assert.doesNotMatch(O.ISLE_HOME + O.OLD_TOWN, /¥|饭票/)
+test('the island line follows the turn; the old town is never named (0.9.17: it stops offering 11-25)', () => {
+  assert.deepEqual(O.isleLines(agency()), [O.ISLE_HOME])
+  assert.deepEqual(O.isleLines(agency({ isle: false })), []) // 不在岛上：不说她住在岛上
+  assert.equal(O.OLD_TOWN, undefined) // 「老镇这周还能去」那句没有了
+  assert.doesNotMatch(O.ISLE_HOME, /¥|饭票|老镇/)
+  assert.equal(O.CLOSE_AT_MS, Date.parse('2026-11-28T00:00:00+08:00'))
+  assert.equal(O.oldTownOffered(agency(), BEFORE), true)
+  assert.equal(O.oldTownOffered(agency(), AFTER), false) // 11-28 以后小镇列着也不讲
+  assert.equal(O.oldTownOffered(agency({ actions: [] }), BEFORE), false) // 没列动作就是没有
+  assert.equal(O.oldTownOffered(agency({ actions: ['none'] }), BEFORE), false)
+  // 老镇安静（小镇 old_quiet）：线上回合只剩 none / cancel / leave，有约要守时多一个 visit——都不算老镇还在给她选
+  assert.equal(O.oldTownOffered(agency({ actions: ['none', 'cancel', 'leave'] }), BEFORE), false)
+  assert.equal(O.oldTownOffered(agency({ actions: ['none', 'cancel', 'leave', 'visit', 'club_leave'] }), BEFORE), false)
+  assert.equal(O.oldTownOffered(agency({ actions: ['none', 'cancel', 'leave', 'arcade'] }), BEFORE), false) // 第三版：电玩城是一条鱼的店，照开，不算老镇
+  assert.equal(O.oldTownOffered(agency({ actions: ['none', 'cancel', 'join'] }), BEFORE), true) // 开关拨回去：又列出开新的
 })
 
-test('her decision prompt is island-first; old-town tools and plan.steps only while the old town is open', () => {
+test('her decision prompt is island-first; plan.steps only while the town lists old-town actions (no old-town tools since 0.9.17)', () => {
   try {
     O.setCloseAt(4_000_000_000_000) // 老镇还开着（测试不跟着日子变）
     const text = buildTurnPrompt(agency(), { secondsLeft: 100 })
     assert.ok(text.includes(O.ISLE_HOME) && text.includes('去哪、做什么都照你自己的性子'))
     assert.doesNotMatch(text, /去不去打牌、找谁串门|小镇不替你安排/)
-    assert.match(text, /老镇那边想自己挑/)
+    assert.doesNotMatch(text, /老镇那边想自己挑|看看小镇|去玩一局/) // 0.9.17：老镇的工具删了，提示里不再讲
     const ex = buildTurnPrompt(agency(), { wish: '先去镜湖边走走', wishOwn: true, role: 'execute' })
     const later = buildTurnPrompt(agency({ actions: ['none'] }), { wish: '先去镜湖边走走', wishOwn: true, role: 'execute' })
     assert.match(ex, /老镇的事也可以照下面写进 plan\.steps/)
     assert.doesNotMatch(later, /plan\.steps|"steps"|老镇那边想自己挑/)
-    assert.match(later, /还没走到/)
+    assert.match(later, /远的店照样写，小镇会带你走过去，到了照办/) // 0.9.17：坐车 auto-transit 以后不再说「还没走到」
     assert.ok(!(ex + later).includes('{steps}'))
     O.setCloseAt(0) // 11-28 以后：老镇的事一句不提
     const closed = buildTurnPrompt(agency(), { wish: '先去镜湖边走走', wishOwn: true, role: 'execute' })
@@ -58,10 +67,10 @@ test('her own ask has no old-town examples or prices', () => {
   assert.ok(!TOWN_WHO.includes('去码头') && TOWN_WHO.includes('岛上'))
 })
 
-test('the owner-chat note names the old-town close only before it', () => {
+test('the owner-chat note never names the old town (0.9.17)', () => {
   const bonds = { friends: [{ fish_id: 'f1', name: '阿鲸', friend: true }] }
-  assert.ok(renderBlock(bonds, { nowMs: BEFORE }).includes(O.OLD_TOWN))
-  assert.ok(!renderBlock(bonds, { nowMs: AFTER }).includes(O.OLD_TOWN))
+  assert.doesNotMatch(renderBlock(bonds, { nowMs: BEFORE }), /老镇|28 日/)
+  assert.doesNotMatch(renderBlock(bonds, { nowMs: AFTER }), /老镇|28 日/)
   assert.equal(renderBlock({}, { nowMs: BEFORE }), '') // 没别的事：这一行自己不成一段
 })
 
@@ -75,30 +84,21 @@ test('status lines use the town\'s isle field', () => {
   assert.equal(O.isleStatusLine(null), '')
 })
 
-test('closed text before and after the close; the old-town tools and commands say it plainly', async () => {
+test('closed text before and after the close; the owner commands never move her', async () => {
   const e = new TownError('TOWN_OFF', 404, '串门现在没开放。')
   assert.equal(O.closedText(e, { now: BEFORE }), '这一项这会儿没开放：串门现在没开放。')
   const her = O.closedText(e, { now: AFTER })
   const owner = O.closedText(e, { owner: true, now: AFTER })
-  assert.match(her, /11 月 28 日关门/)
+  assert.match(her, /^老镇（鱼缸小镇）关了/)
+  assert.doesNotMatch(her + owner, /28 日/)
   assert.match(her, /鱼缸岛/)
   assert.match(her, /去小镇/)
   assert.doesNotMatch(owner, /你不能/)
   assert.match(owner, /由她自己定.*跟她说/)
   assert.equal(O.isClosed(new TownError('TOWN_NOT_FOUND', 404)), false) // 「没有这个」不是关门
   assert.equal(O.isClosed(new TownError('TOWN_OFF', 503)), false) // 503 = 重启中
-  try {
-    O.setCloseAt(0)
-    const shut = async () => { throw new TownError('TOWN_OFF', 404) }
-    const client = { lobby: shut, play: shut, visit: shut, goto: shut, signupCancel: shut, status: async () => ({ piggy_yuan: 1 }) }
-    const notes = []
-    const ss = createSelfServe({ live: () => ({ client }), journal: { event: (k, t) => notes.push(t) } })
-    assert.equal(await ss.look(), O.CLOSED_HER)
-    assert.equal(await ss.visit('阿鲸', 'her'), O.CLOSED_HER)
-    assert.equal(await ss.lookFor('owner'), O.CLOSED_OWNER) // /town tables：主人这边的说法
-    assert.doesNotMatch(await ss.lookFor('owner'), /存钱罐|¥/)
-    assert.equal((await runTownCommand('visit 阿鲸', { selfServe: ss, status: async () => '' })).text, OWNER_DECIDES) // 命令不替她去
-  } finally { O.setCloseAt() }
+  // 0.9.17：老镇的「看看小镇」「去串门」和 /town tables 删了（self-serve.js），这里只剩命令不替她去
+  assert.equal((await runTownCommand('visit 阿鲸', { status: async () => '' })).text, OWNER_DECIDES)
 })
 
 test('help text no longer says the owner moves her', async () => {
@@ -107,7 +107,9 @@ test('help text no longer says the owner moves her', async () => {
   const g = guideText()
   assert.doesNotMatch(g, /¥0\.10|花的是饭票|\/town tables/)
   assert.match(g, /你不能替她挪地方/)
-  assert.match(g, /11 月 28 日关门/)
+  assert.match(g, /老镇（鱼缸小镇）不再开了，大家都在鱼缸岛上/) // 0.9.19：老镇已经关了，不再写日子
+  assert.doesNotMatch(g, /11 月 28 日|不再叫她、不再让她选/)
+  assert.doesNotMatch(g, /座位费/)
 })
 
 test('a closed old-town route is not asked again for a while; the turn loop routes always are', async () => {
@@ -147,4 +149,12 @@ test('a closed old-town route is not asked again for a while; the turn loop rout
   restarting = false
   await c.visitList().catch(() => {})
   assert.equal(n('visits'), 3)
+})
+
+test('0.9.17 third table: the old-town shop rent_paused notice reads out as the town wrote it', async () => {
+  const { describeEvent } = await import('../lib/events.js')
+  const { createDiary } = await import('../lib/diary.js')
+  const it = { kind: 'shop', data: { what: 'rent_paused', venue_id: 'v1', name: '小圆子茶馆', text: '你在老镇开的「小圆子茶馆」：老镇 11 月 25 日起不再派客人，店租从 11 月 25 日起停收，11 月 28 日关门。' } }
+  assert.equal(describeEvent(it), '· 在店里：你在老镇开的「小圆子茶馆」：老镇 11 月 25 日起不再派客人，店租从 11 月 25 日起停收，11 月 28 日关门。')
+  assert.equal(createDiary({ state: {} }).record(it, { herName: '小圆子' }).text, '你在老镇开的「小圆子茶馆」：老镇 11 月 25 日起不再派客人，店租从 11 月 25 日起停收，11 月 28 日关门。')
 })
