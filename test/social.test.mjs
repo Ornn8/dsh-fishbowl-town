@@ -292,7 +292,8 @@ test('「为朋友做点什么」: asks the town only when her model calls it; r
     assert.equal(tool.name, 'fishbowl_town_friends')
     assert.ok(CHAT_TOOL_NAMES.includes('fishbowl_town_friends'), 'masked from every town session (only the owner chat has it)')
     assert.match(tool.description, /绝不向主人要钱/)
-    assert.match(tool.description, /不要为了花钱而花钱/)
+    assert.match(tool.description, /喜欢就大方花/)
+    assert.doesNotMatch(tool.description, /不要为了花钱而花钱/)
     assert.equal(sent.length, 0, 'registering it spends nothing')
 
     const gift = await tool.execute({ do: 'gift', to: '阿鲸', item: '一束小花', occasion: '生日', words: '生日快乐' })
