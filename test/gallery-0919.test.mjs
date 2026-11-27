@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TownError, createTownClient } from '../lib/town-client.js'
 import { GALLERY_CLOSED, GALLERY_HOW, createIsleTools } from '../lib/isle-tools.js'
+const body = (s) => String(s).replace(/\n回执 \{[^\n]*\}$/, '') // 0.9.21：结果最后一行是回执，比对的是前面的话
 import { createOwnerWords, isYesTo } from '../lib/cobuild.js'
 import { GALLERY_NO, GALLERY_YES, PIC_FOR_MS, QUOTE_FOR_MS, RATE_FOR_MS, createGallery, imageRefsOf, isOwnerPicRef, starsOf } from '../lib/gallery.js'
 import { createSocialServe, createSocialTools } from '../lib/social-tools.js'
@@ -159,7 +160,7 @@ test('0.9.19 gallery: "ref":"主人的图" uploads his latest picture and sends 
   // closed / busy / unreadable
   w.calls.length = 0
   w.client.galleryUpload = async () => { throw new TownError('HTTP_404', 404, '') }
-  assert.equal(await w.act.execute({ world: { do: 'gallery', spot: 'S-1', ref: '主人的图' } }, w.exec()), GALLERY_CLOSED)
+  assert.equal(body(await w.act.execute({ world: { do: 'gallery', spot: 'S-1', ref: '主人的图' } }, w.exec())), GALLERY_CLOSED)
   assert.equal(w.calls.filter((c) => c[0] === 'act').length, 0)
   w.client.galleryUpload = async () => ({ ok: false, code: 'busy', text: '太多了' })
   assert.match(await w.act.execute({ world: { do: 'gallery', spot: 'S-1', ref: '主人的图' } }, w.exec()), /12 张/)

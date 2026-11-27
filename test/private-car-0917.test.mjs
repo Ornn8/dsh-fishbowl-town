@@ -4,6 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { BUILD_HERE, carWhat, createIsleTools, isCarBuild } from '../lib/isle-tools.js'
+const body = (s) => String(s).replace(/\n回执 \{[^\n]*\}$/, '') // 0.9.21：结果最后一行是回执，比对的是前面的话
 
 function tools() {
   const sent = []
@@ -33,8 +34,8 @@ test('act: the car type and the plate go to the island; a house build still poin
   assert.match(await act.execute({ world: type }, {}), /「好了」\n办成了/)
   assert.match(await act.execute({ world: { do: 'build', car: '小黄', plate: true } }, {}), /办成了/)
   assert.deepEqual(sent, [type, { do: 'build', car: '小黄', plate: true }])
-  assert.equal(await act.execute({ world: { do: 'build', lot: 'L-0107', idea: '海边小屋' } }, {}), BUILD_HERE)
-  assert.equal(await act.execute({ world: { do: 'confirm_build', car: '小黄' } }, {}), BUILD_HERE)
+  assert.equal(body(await act.execute({ world: { do: 'build', lot: 'L-0107', idea: '海边小屋' } }, {})), BUILD_HERE)
+  assert.equal(body(await act.execute({ world: { do: 'confirm_build', car: '小黄' } }, {})), BUILD_HERE)
   assert.equal(sent.length, 2)
   assert.ok(j[0].includes('在岛上在车行登记车型：好了'), j[0])
   assert.ok(j[1].includes('在岛上给车上牌'), j[1])

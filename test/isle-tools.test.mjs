@@ -5,6 +5,7 @@ import { TownError, createTownClient } from '../lib/town-client.js'
 import { CHAT_TOOL_NAMES, createChatTools } from '../lib/chat-tools.js'
 import { BUILD_HERE, GUIDE_POINTER, ISLE_ACT, ROAD_LOTS_LINE, ISLE_LOOK, LOOK_TOPICS, NOT_YET, createChatPictures, createIsleTools, isleFail, newRef, readOf, worldOf } from '../lib/isle-tools.js'
 import { NO_PICS_HEAD } from '../lib/isle.js'
+const body = (s) => String(s).replace(/\n回执 \{[^\n]*\}$/, '') // 0.9.21：结果最后一行是回执，比对的是前面的话
 
 const PIC = 'https://api.fishbowltown.com/town/api/outside/isle/pic/0123456789ab.jpg'
 
@@ -78,7 +79,7 @@ test('look: 「我的」 by default; the island\'s text verbatim under a heading
   assert.equal(out.text, `【岛上 · 你自己的】\n${mine}`)
   assert.deepEqual(look.output.render({}, out), [{ type: 'text', text: out.text }])
   reply = { ok: false, code: 'rate_limited', retry_after: 600, text: '主聊天里查岛上每小时最多 30 次，10 分钟后再查' }
-  assert.equal((await look.execute({ topic: '地' }, {})).text, '没查到：主聊天里查岛上每小时最多 30 次，10 分钟后再查')
+  assert.equal(body((await look.execute({ topic: '地' }, {})).text), '没查到：主聊天里查岛上每小时最多 30 次，10 分钟后再查')
   // the town is new but the island is not yet: 「我的」 answers `topic 只能是…`
   reply = { ok: false, code: 'bad', text: 'topic 只能是 地、楼、铺位、店、订单、缺的、统计、镇规、怎么做、我的店、价、地图、样子、田' }
   assert.match((await look.execute({}, {})).text, /^没查到：topic 只能是[\s\S]*「我的」岛上还没开，先查「我的店」/)
@@ -114,8 +115,8 @@ test('an old town without the routes (404) answers plainly and points to the pla
   const gone = new TownError('HTTP_404', 404, '')
   const client = { async isleLook() { throw gone }, async isleAct() { throw gone } }
   const { look, act, journal } = tools({ client })
-  assert.equal((await look.execute({}, {})).text, NOT_YET)
-  assert.equal(await act.execute({ world: { do: 'bid', auction: 'A-1', max: 5 } }, {}), NOT_YET)
+  assert.equal(body((await look.execute({}, {})).text), NOT_YET)
+  assert.equal(body(await act.execute({ world: { do: 'bid', auction: 'A-1', max: 5 } }, {})), NOT_YET)
   assert.match(NOT_YET, /fishbowl_town_go/)
   assert.equal(journal.j.length, 0)
   assert.equal(isleFail(new TownError('HTTP_405', 405, '')), NOT_YET)
@@ -123,8 +124,8 @@ test('an old town without the routes (404) answers plainly and points to the pla
   assert.match(isleFail(new TownError('TOWN_UNAVAILABLE', 503, '', 3)), /太忙.*约 3 秒/)
   // an older plugin client object (no isle methods) and no live link
   const bare = tools({ client: {} })
-  assert.equal((await bare.look.execute({}, {})).text, NOT_YET)
-  assert.equal(await bare.act.execute({ world: { do: 'walk', to: '广场' } }, {}), NOT_YET)
+  assert.equal(body((await bare.look.execute({}, {})).text), NOT_YET)
+  assert.equal(body(await bare.act.execute({ world: { do: 'walk', to: '广场' } }, {})), NOT_YET)
   const off = tools({ client: null })
   assert.match((await off.look.execute({}, {})).text, /没在小镇值班/)
   assert.match(await off.act.execute({ world: { do: 'walk' } }, {}), /没在小镇值班/)
@@ -136,7 +137,7 @@ test('act: the island\'s words verbatim, framed so she tells her owner honestly;
   const client = { async isleAct(world, ref) { sent.push([world, ref]); return reply } }
   const { act, journal } = tools({ client })
   const out = await act.execute({ world: { do: 'bid', auction: 'A-0007', max: 600 } }, {})
-  assert.equal(out, '岛上回你的：「出价收下了：你最多出 600 鲸币，现价 325 鲸币，你领先」\n办成了。（这是岛上刚回你的原话。办成了就照这句告诉主人；没办成就照实说没办成、为什么，别说成办了。）')
+  assert.equal(body(out), '岛上回你的：「出价收下了：你最多出 600 鲸币，现价 325 鲸币，你领先」\n办成了。（这是岛上刚回你的原话。办成了就照这句告诉主人；没办成就照实说没办成、为什么，别说成办了。）')
   assert.deepEqual(sent[0][0], { do: 'bid', auction: 'A-0007', max: 600 })
   assert.match(sent[0][1], /^dsh-[a-z0-9]+-[0-9a-f]+$/)
   assert.match(journal.j[0].text, /^你在聊天里在岛上出价：出价收下了/)
@@ -184,7 +185,7 @@ test('act: her owner\'s 饭票 (fx_buy, sprite_set) only with his words from thi
   assert.match(await act.execute({ world: { do: 'fx_buy', yuan: 0.5 } }, {}), /「好了」\n办成了/)
   assert.match(await act.execute({ world: { do: 'sprite_tall', tall: 1.5 } }, {}), /办成了/) // changing the height is free
   assert.equal(sent.length, 2)
-  for (const verb of ['build', 'build_guide', 'confirm_build']) assert.equal(await act.execute({ world: { do: verb, lot: 'L-1' } }, {}), BUILD_HERE)
+  for (const verb of ['build', 'build_guide', 'confirm_build']) assert.equal(body(await act.execute({ world: { do: verb, lot: 'L-1' } }, {})), BUILD_HERE)
   assert.match(BUILD_HERE, /fishbowl_town_build/)
   assert.match(await act.execute({ world: { do: 'look', topic: '地' } }, {}), /fishbowl_isle_look/)
   assert.match(await act.execute({ world: {} }, {}), /world 填/)
